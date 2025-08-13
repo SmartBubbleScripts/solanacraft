@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+
 # SolanaCraft 🚀
 
 **Professional Solana Platform for Token Claiming, Launching, and NFTs**
@@ -98,7 +99,8 @@ NEXT_PUBLIC_SOLANA_RPC_URL=https://api.devnet.solana.com
 # Commission Configuration
 COMMISSION_WALLET_PRIVATE_KEY=your_commission_wallet_private_key
 COMMISSION_WALLET_PUBLIC_KEY=your_commission_wallet_public_key
-COMMISSION_PERCENTAGE=0.05
+# Fixed commission: 0.0007 SOL per closed account (not a percentage)
+FIXED_COMMISSION_PER_ACCOUNT=0.0007
 
 # Optional: Firebase for Analytics
 NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
@@ -325,8 +327,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by the SolanaCraft Team**
 
-_Professional Solana Platform for the Future of Web3_
-=======
+# _Professional Solana Platform for the Future of Web3_
+
 # solanacraft
+
 Professional Solana platform for token claiming, launching, and NFT minting
->>>>>>> ccf1c4031f390537abb0633e50f4e79d841567d5
+
+> > > > > > > ccf1c4031f390537abb0633e50f4e79d841567d5

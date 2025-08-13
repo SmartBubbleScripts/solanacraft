@@ -171,7 +171,8 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       const commissionWallet =
         process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
       if (commissionWallet) {
-        const commissionAmount = selectedAccounts.length * 0.0005;
+        // Fixed commission: 0.0007 SOL per closed account
+        const commissionAmount = selectedAccounts.length * 0.0007;
         const transferInstruction = SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(commissionWallet),
@@ -389,7 +390,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             <div className='flex justify-between items-center py-2 border-b border-gray-600'>
               <span className='text-gray-400'>Platform Fee:</span>
               <span className='text-white font-semibold'>
-                {selectedAccounts.length * 0.0005} SOL
+                {selectedAccounts.length * 0.0007} SOL
               </span>
             </div>
             <div className='flex justify-between items-center py-2 border-b border-gray-600'>
@@ -404,7 +405,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                 <span className='text-[#7ee787] text-lg font-bold'>
                   {(
                     getTotalSelectedRent() -
-                    selectedAccounts.length * 0.0005 -
+                    selectedAccounts.length * 0.0007 -
                     0.000005
                   ).toFixed(4)}{' '}
                   SOL

@@ -1,15 +1,18 @@
 'use client';
 
 import { FC, ReactNode, useMemo } from 'react';
-import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from '@solana/wallet-adapter-react';
+import {
+  ConnectionProvider,
+  WalletProvider as SolanaWalletProvider,
+} from '@solana/wallet-adapter-react';
 import { WalletAdapterNetwork, WalletError } from '@solana/wallet-adapter-base';
-import { 
-  PhantomWalletAdapter, 
-  SolflareWalletAdapter, 
+import {
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
   TorusWalletAdapter,
   CoinbaseWalletAdapter,
   LedgerWalletAdapter,
-  SolongWalletAdapter
+  SolongWalletAdapter,
 } from '@solana/wallet-adapter-wallets';
 import { BackpackWalletAdapter } from '@solana/wallet-adapter-backpack';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
@@ -23,8 +26,14 @@ interface Props {
 }
 
 export const WalletProvider: FC<Props> = ({ children }) => {
-  // Can be set to 'devnet', 'testnet', or 'mainnet-beta'
-  const network = WalletAdapterNetwork.Devnet;
+  // Use environment variable or default to mainnet-beta for production
+  const network = useMemo(() => {
+    const envNetwork = process.env.NEXT_PUBLIC_SOLANA_NETWORK;
+    if (envNetwork === 'devnet') return WalletAdapterNetwork.Devnet;
+    if (envNetwork === 'testnet') return WalletAdapterNetwork.Testnet;
+    // Default to mainnet-beta for production
+    return WalletAdapterNetwork.Mainnet;
+  }, []);
 
   // You can also provide a custom RPC endpoint
   const endpoint = useMemo(() => {
@@ -52,9 +61,7 @@ export const WalletProvider: FC<Props> = ({ children }) => {
   return (
     <ConnectionProvider endpoint={endpoint}>
       <SolanaWalletProvider wallets={wallets} onError={onError} autoConnect>
-        <WalletModalProvider>
-          {children}
-        </WalletModalProvider>
+        <WalletModalProvider>{children}</WalletModalProvider>
       </SolanaWalletProvider>
     </ConnectionProvider>
   );
