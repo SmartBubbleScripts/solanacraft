@@ -1,0 +1,361 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      'Roboto', sans-serif;
+  }
+
+  body {
+    @apply bg-[#0d1117] text-[#f0f6fc] min-h-screen;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%);
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-[#161b22];
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-[#30363d] rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-[#484f58];
+  }
+}
+
+@layer components {
+  /* Professional Card Design */
+  .craft-card {
+    @apply bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .craft-card:hover {
+    @apply border-[#58a6ff] shadow-[0_0_30px_rgba(88,166,255,0.1)];
+    transform: translateY(-2px);
+  }
+
+  /* Glass Effect */
+  .glass-panel {
+    @apply bg-[#161b22]/80 backdrop-blur-xl border border-[#30363d]/50 rounded-2xl;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Professional Buttons */
+  .btn-primary {
+    @apply bg-gradient-to-r from-[#58a6ff] to-[#1f6feb] hover:from-[#1f6feb] hover:to-[#58a6ff] text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl;
+    box-shadow: 0 4px 14px rgba(88, 166, 255, 0.3);
+  }
+
+  .btn-secondary {
+    @apply bg-[#21262d] hover:bg-[#30363d] text-[#f0f6fc] font-semibold py-3 px-6 rounded-lg border border-[#30363d] hover:border-[#484f58] transition-all duration-300;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent hover:bg-[#21262d] text-[#f0f6fc] font-medium py-2 px-4 rounded-md transition-all duration-200;
+  }
+
+  /* Input Fields */
+  .input-field {
+    @apply bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3 text-[#f0f6fc] placeholder-[#7d8590] focus:outline-none focus:ring-2 focus:ring-[#58a6ff] focus:border-transparent transition-all duration-200;
+  }
+
+  .input-field:focus {
+    @apply bg-[#161b22] border-[#58a6ff];
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+  }
+
+  /* Navigation */
+  .nav-link {
+    @apply text-[#7d8590] hover:text-[#f0f6fc] transition-colors duration-200 relative;
+  }
+
+  .nav-link::after {
+    content: '';
+    @apply absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-[#58a6ff] to-[#1f6feb] transition-all duration-300;
+  }
+
+  .nav-link:hover::after {
+    @apply w-full;
+  }
+
+  /* Status Indicators */
+  .status-success {
+    @apply bg-[#0c5323] border border-[#1a7f37] text-[#7ee787];
+  }
+
+  .status-error {
+    @apply bg-[#5a1e1e] border border-[#da3633] text-[#ff7b72];
+  }
+
+  .status-warning {
+    @apply bg-[#5a1e1e] border border-[#d29922] text-[#ffa657];
+  }
+
+  /* Gradient Text */
+  .text-gradient {
+    @apply bg-gradient-to-r from-[#58a6ff] via-[#1f6feb] to-[#58a6ff] bg-clip-text text-transparent;
+  }
+
+  /* Custom Animations */
+  .animate-fade-in-up {
+    animation: fadeInUp 0.6s ease-out forwards;
+  }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.5s ease-out forwards;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.4s ease-out forwards;
+  }
+
+  /* Enhanced LED Divider Animations */
+  .animate-shimmer {
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  .animate-flow {
+    animation: flow 2s ease-in-out infinite;
+  }
+
+  .animate-sparkle {
+    animation: sparkle 1.8s ease-in-out infinite;
+  }
+
+  /* Slow pulse animation for LED divider */
+  .animate-pulse-slow {
+    animation: pulseSlow 4s ease-in-out infinite;
+  }
+
+  /* Simple pulse animation for LED divider */
+  .animate-pulse-simple {
+    animation: pulseSimple 3s ease-in-out infinite;
+  }
+
+  /* Solana Wallet Button Overrides */
+  .wallet-adapter-button {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  .wallet-adapter-button-trigger {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  /* Force wallet button to be more rounded */
+  [data-testid='wallet-adapter-button'] {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  /* Custom wallet button styling */
+  .wallet-btn-custom {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  .wallet-btn-custom .wallet-adapter-button {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  .wallet-btn-custom .wallet-adapter-button-trigger {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  /* More aggressive overrides */
+  button[data-testid='wallet-adapter-button'] {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  /* Target all possible wallet button selectors */
+  .wallet-adapter-button,
+  .wallet-adapter-button-trigger,
+  [data-testid='wallet-adapter-button'],
+  button[data-testid='wallet-adapter-button'],
+  .wallet-btn-custom button,
+  .wallet-btn-custom .wallet-adapter-button,
+  .wallet-btn-custom .wallet-adapter-button-trigger {
+    border-radius: 1rem !important;
+    border-radius: 16px !important;
+  }
+
+  /* Use CSS custom properties for maximum override */
+  :root {
+    --wallet-button-radius: 1rem !important;
+  }
+
+  .wallet-adapter-button,
+  .wallet-adapter-button-trigger,
+  [data-testid='wallet-adapter-button'] {
+    border-radius: var(--wallet-button-radius) !important;
+  }
+}
+
+@layer utilities {
+  /* Text Shadows */
+  .text-glow {
+    text-shadow: 0 0 20px rgba(88, 166, 255, 0.5);
+  }
+
+  /* Border Gradients */
+  .border-gradient {
+    border: 2px solid transparent;
+    background: linear-gradient(#0d1117, #0d1117) padding-box,
+      linear-gradient(135deg, #58a6ff, #1f6feb) border-box;
+  }
+
+  /* Dots Pattern Background */
+  .bg-dots {
+    background-image: radial-gradient(
+      circle,
+      #37415160 1.2px,
+      transparent 1.2px
+    );
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+  }
+
+  .bg-dots-light {
+    background-image: radial-gradient(circle, #37415152 1px, transparent 1px);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+  }
+
+  .bg-dots-subtle {
+    background-image: radial-gradient(circle, #37415169 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+}
+
+/* Keyframe Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* LED Divider Keyframes */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0.3;
+  }
+}
+
+@keyframes flow {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scaleX(0.7);
+    filter: brightness(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.1);
+    filter: brightness(1.3);
+  }
+}
+
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0.6;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(2);
+  }
+}
+
+/* Slow pulse keyframe for LED divider */
+@keyframes pulseSlow {
+  0%,
+  100% {
+    opacity: 0.4;
+    filter: brightness(0.8);
+    transform: scaleY(0.9);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.3);
+    transform: scaleY(1.1);
+  }
+}
+
+/* Simple pulse keyframe for LED divider */
+@keyframes pulseSimple {
+  0%,
+  100% {
+    opacity: 0.2;
+    filter: brightness(0.5);
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.5);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.6),
+      0 0 40px rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .craft-card {
+    @apply mx-4;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    @apply w-full;
+  }
+}
