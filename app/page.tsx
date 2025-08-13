@@ -36,8 +36,8 @@ export default function Home() {
               <div className='text-3xl font-bold text-[#7ee787] mb-2'>
                 0.0007 SOL
               </div>
-              <div className='text-white font-semibold mb-2'>Our Fee</div>
-              <div className='text-[#7d8590] text-sm'>Per closed account</div>
+              <div className='text-white font-semibold mb-2'>Base Fee</div>
+              <div className='text-[#7d8590] text-sm'>Per wallet + 5% if >5 accounts</div>
             </div>
 
             <div className='bg-[#161b22] p-6 rounded-xl border border-[#30363d] text-center'>

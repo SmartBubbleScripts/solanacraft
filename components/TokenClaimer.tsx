@@ -171,8 +171,17 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       const commissionWallet =
         process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
       if (commissionWallet) {
-        // Fixed commission: 0.0007 SOL per closed account
-        const commissionAmount = selectedAccounts.length * 0.0007;
+        // New fee structure: 0.0007 SOL per wallet + 5% of client receive amount if >5 accounts
+        const accountCount = selectedAccounts.length;
+        let commissionAmount = 0.0007; // Base fee per wallet
+
+        if (accountCount > 5) {
+          // Calculate 5% of what the client will receive
+          const totalRent = getTotalSelectedRent();
+          const additionalCommission = totalRent * 0.05; // 5% of total rent
+          commissionAmount += additionalCommission;
+        }
+
         const transferInstruction = SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(commissionWallet),
@@ -390,7 +399,17 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             <div className='flex justify-between items-center py-2 border-b border-gray-600'>
               <span className='text-gray-400'>Platform Fee:</span>
               <span className='text-white font-semibold'>
-                {selectedAccounts.length * 0.0007} SOL
+                {(() => {
+                  const accountCount = selectedAccounts.length;
+                  if (accountCount <= 5) {
+                    return '0.0007 SOL';
+                  } else {
+                    const totalRent = getTotalSelectedRent();
+                    const additionalCommission = totalRent * 0.05;
+                    const totalFee = 0.0007 + additionalCommission;
+                    return `${totalFee.toFixed(4)} SOL`;
+                  }
+                })()}
               </span>
             </div>
             <div className='flex justify-between items-center py-2 border-b border-gray-600'>
@@ -403,11 +422,20 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                   You'll Receive:
                 </span>
                 <span className='text-[#7ee787] text-lg font-bold'>
-                  {(
-                    getTotalSelectedRent() -
-                    selectedAccounts.length * 0.0007 -
-                    0.000005
-                  ).toFixed(4)}{' '}
+                  {(() => {
+                    const accountCount = selectedAccounts.length;
+                    let commissionAmount = 0.0007; // Base fee per wallet
+                    if (accountCount > 5) {
+                      const totalRent = getTotalSelectedRent();
+                      const additionalCommission = totalRent * 0.05;
+                      commissionAmount += additionalCommission;
+                    }
+                    return (
+                      getTotalSelectedRent() -
+                      commissionAmount -
+                      0.000005
+                    ).toFixed(4);
+                  })()}{' '}
                   SOL
                 </span>
               </div>

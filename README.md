@@ -243,9 +243,23 @@ solanacraft/
 3. **Enterprise Plans** - Custom solutions for businesses
 4. **API Access** - Developer tools and integrations
 
+### 💰 Commission Structure
+
+Our smart pricing system ensures fair fees for all users:
+
+- **Base Fee**: 0.0007 SOL per wallet (regardless of account count)
+- **Volume Bonus**: +5% of client receive amount if closing more than 5 accounts
+- **Example**: 1-5 accounts = 0.0007 SOL total, 6+ accounts = 0.0007 SOL + 5% of rent
+
+**Why this is smart:**
+
+- Small users pay minimal fixed fee
+- Large users pay fair percentage on additional accounts
+- Competitive with market rates (Sol-Initiator charges 0.001 SOL per wallet)
+
 ### Competitive Advantages
 
-- **Lower Fees** - Competitive pricing structure
+- **Smart Pricing** - Base fee + volume-based commission
 - **Professional Tools** - Enterprise-grade features
 - **Better UX** - Superior user experience
 - **Security Focus** - Bank-grade security measures

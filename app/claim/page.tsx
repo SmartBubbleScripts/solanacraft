@@ -63,9 +63,9 @@ export default function ClaimPage() {
                 0.0007 SOL
               </div>
               <div className='text-white font-semibold mb-3 text-xl'>
-                Our Fee
+                Base Fee
               </div>
-              <div className='text-[#7d8590] mb-4'>Per closed account</div>
+              <div className='text-[#7d8590] mb-4'>Per wallet + 5% if >5 accounts</div>
               <div className='inline-block bg-[#7ee787]/20 text-[#7ee787] px-4 py-2 rounded-full text-sm font-semibold'>
                 🏆 Market Leader
               </div>
