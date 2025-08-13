@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # SolanaCraft 🚀
 
 **Professional Solana Platform for Token Claiming, Launching, and NFTs**
@@ -325,3 +326,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Built with ❤️ by the SolanaCraft Team**
 
 _Professional Solana Platform for the Future of Web3_
+=======
+# solanacraft
+Professional Solana platform for token claiming, launching, and NFT minting
+>>>>>>> ccf1c4031f390537abb0633e50f4e79d841567d5
