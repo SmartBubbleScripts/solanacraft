@@ -37,7 +37,9 @@ export default function Home() {
                 0.0007 SOL
               </div>
               <div className='text-white font-semibold mb-2'>Base Fee</div>
-              <div className='text-[#7d8590] text-sm'>Per wallet + 5% if >5 accounts</div>
+              <div className='text-[#7d8590] text-sm'>
+                Per wallet + 5% if &gt;5 accounts
+              </div>
             </div>
 
             <div className='bg-[#161b22] p-6 rounded-xl border border-[#30363d] text-center'>
