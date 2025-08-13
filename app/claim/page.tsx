@@ -74,16 +74,16 @@ export default function ClaimPage() {
 
             <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
               <div className='text-4xl font-bold text-[#58a6ff] mb-3'>
-                Volume Discounts
+                Volume Scaling
               </div>
               <div className='text-white font-semibold mb-3 text-xl'>
-                Smart Scaling
+                Fair Pricing
               </div>
               <div className='text-[#7d8590] mb-4'>
-                More accounts, better rates
+                Higher volume, fair commission
               </div>
               <div className='inline-block bg-[#58a6ff]/20 text-[#58a6ff] px-4 py-2 rounded-full text-sm font-semibold'>
-                📈 Scale Efficiently
+                ⚖️ Fair Commission
               </div>
             </div>
 

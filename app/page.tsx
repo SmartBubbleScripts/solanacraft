@@ -44,11 +44,11 @@ export default function Home() {
 
             <div className='bg-[#161b22] p-6 rounded-xl border border-[#30363d] text-center'>
               <div className='text-3xl font-bold text-[#58a6ff] mb-2'>
-                Volume Discounts
+                Volume Scaling
               </div>
-              <div className='text-white font-semibold mb-2'>Smart Scaling</div>
+              <div className='text-white font-semibold mb-2'>Fair Pricing</div>
               <div className='text-[#7d8590] text-sm'>
-                More accounts, better rates
+                Higher volume, fair commission
               </div>
             </div>
 
