@@ -19,7 +19,7 @@ export default function Home() {
       <Hero onClaimClick={() => setIsClaiming(true)} />
 
       {/* Smart Pricing Section */}
-      <section className='py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-[#0d1117] to-[#161b22]'>
+      <section className='py-16 px-4 sm:px-6 lg:px-8'>
         <div className='max-w-6xl mx-auto'>
           <div className='text-center mb-12'>
             <h2 className='text-4xl font-bold mb-4 text-white'>
@@ -31,7 +31,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className='grid md:grid-cols-3 gap-8 mb-12'>
+          <div className='grid md:grid-cols-2 gap-8 mb-12'>
             <div className='bg-[#161b22] p-6 rounded-xl border border-[#30363d] text-center'>
               <div className='text-3xl font-bold text-[#7ee787] mb-2'>
                 0.0007 SOL
@@ -43,16 +43,6 @@ export default function Home() {
             </div>
 
             <div className='bg-[#161b22] p-6 rounded-xl border border-[#30363d] text-center'>
-              <div className='text-3xl font-bold text-[#58a6ff] mb-2'>
-                Volume Scaling
-              </div>
-              <div className='text-white font-semibold mb-2'>Fair Pricing</div>
-              <div className='text-[#7d8590] text-sm'>
-                Higher volume, fair commission
-              </div>
-            </div>
-
-            <div className='bg-[#161b22] p-6 rounded-xl border border-[#30363d] text-center'>
               <div className='text-3xl font-bold text-[#7ee787] mb-2'>
                 No Hidden Fees
               </div>
@@ -60,12 +50,6 @@ export default function Home() {
               <div className='text-[#7d8590] text-sm'>
                 Clear, predictable pricing
               </div>
-            </div>
-          </div>
-
-          <div className='text-center'>
-            <div className='inline-block bg-[#7ee787]/20 text-[#7ee787] px-6 py-3 rounded-full font-semibold'>
-              💡 Innovative pricing that grows with your needs
             </div>
           </div>
         </div>

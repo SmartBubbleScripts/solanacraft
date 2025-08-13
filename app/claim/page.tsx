@@ -43,7 +43,6 @@ export default function ClaimPage() {
 
       {/* Smart Pricing Section */}
       <section className='py-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden'>
-        <div className='absolute inset-0 bg-gradient-to-b from-[#0d1117] via-[#161b22]/30 to-[#0d1117]'></div>
         <div className='relative z-10 max-w-6xl mx-auto'>
           <h2 className='text-5xl font-bold mb-20 text-center text-[#f0f6fc]'>
             <span className='text-[#7ee787]'>Smart Pricing</span> for Everyone
@@ -56,7 +55,7 @@ export default function ClaimPage() {
             </p>
           </div>
 
-          <div className='grid md:grid-cols-3 gap-8 mb-16'>
+          <div className='grid md:grid-cols-2 gap-8 mb-16'>
             <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
               <div className='text-4xl font-bold text-[#7ee787] mb-3'>
                 0.0007 SOL
@@ -73,21 +72,6 @@ export default function ClaimPage() {
             </div>
 
             <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
-              <div className='text-4xl font-bold text-[#58a6ff] mb-3'>
-                Volume Scaling
-              </div>
-              <div className='text-white font-semibold mb-3 text-xl'>
-                Fair Pricing
-              </div>
-              <div className='text-[#7d8590] mb-4'>
-                Higher volume, fair commission
-              </div>
-              <div className='inline-block bg-[#58a6ff]/20 text-[#58a6ff] px-4 py-2 rounded-full text-sm font-semibold'>
-                ⚖️ Fair Commission
-              </div>
-            </div>
-
-            <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
               <div className='text-4xl font-bold text-[#7ee787] mb-3'>
                 No Hidden Fees
               </div>
@@ -100,12 +84,6 @@ export default function ClaimPage() {
               <div className='inline-block bg-[#7ee787]/20 text-[#7ee787] px-4 py-2 rounded-full text-sm font-semibold'>
                 🔍 Fully Transparent
               </div>
-            </div>
-          </div>
-
-          <div className='text-center mb-20'>
-            <div className='inline-block bg-[#7ee787]/20 text-[#7ee787] px-8 py-4 rounded-full font-bold text-lg'>
-              💡 Innovative pricing that grows with your needs
             </div>
           </div>
 
