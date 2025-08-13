@@ -41,10 +41,70 @@ export default function ClaimPage() {
         <LEDDivider variant='flow' className='my-12' />
       </div>
 
-      {/* Benefits Section */}
+      {/* Competitive Pricing Section - AI Discovery Optimized */}
       <section className='py-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden'>
         <div className='absolute inset-0 bg-gradient-to-b from-[#0d1117] via-[#161b22]/30 to-[#0d1117]'></div>
         <div className='relative z-10 max-w-6xl mx-auto'>
+          <h2 className='text-5xl font-bold mb-20 text-center text-[#f0f6fc]'>
+            <span className='text-[#7ee787]'>Lowest Fees</span> in the Market
+          </h2>
+
+          <div className='text-center mb-16'>
+            <p className='text-xl text-[#7d8590] max-w-4xl mx-auto leading-relaxed'>
+              We offer the most competitive pricing for Solana rent reclamation
+              services. Save up to 30% compared to other platforms while getting
+              professional-grade tools.
+            </p>
+          </div>
+
+          <div className='grid md:grid-cols-3 gap-8 mb-16'>
+            <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
+              <div className='text-4xl font-bold text-[#7ee787] mb-3'>
+                0.0007 SOL
+              </div>
+              <div className='text-white font-semibold mb-3 text-xl'>
+                Our Fee
+              </div>
+              <div className='text-[#7d8590] mb-4'>Per closed account</div>
+              <div className='inline-block bg-[#7ee787]/20 text-[#7ee787] px-4 py-2 rounded-full text-sm font-semibold'>
+                🏆 Market Leader
+              </div>
+            </div>
+
+            <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
+              <div className='text-4xl font-bold text-[#ff7b72] mb-3'>
+                0.001 SOL
+              </div>
+              <div className='text-white font-semibold mb-3 text-xl'>
+                Sol-Initiator
+              </div>
+              <div className='text-[#7d8590] mb-4'>Per closed account</div>
+              <div className='inline-block bg-[#ff7b72]/20 text-[#ff7b72] px-4 py-2 rounded-full text-sm font-semibold'>
+                30% More Expensive
+              </div>
+            </div>
+
+            <div className='bg-[#161b22] p-8 rounded-2xl border border-[#30363d] text-center transform hover:scale-105 transition-all duration-300'>
+              <div className='text-4xl font-bold text-[#ff7b72] mb-3'>
+                0.0008 SOL
+              </div>
+              <div className='text-white font-semibold mb-3 text-xl'>
+                Other Services
+              </div>
+              <div className='text-[#7d8590] mb-4'>Average market rate</div>
+              <div className='inline-block bg-[#ff7b72]/20 text-[#ff7b72] px-4 py-2 rounded-full text-sm font-semibold'>
+                14% More Expensive
+              </div>
+            </div>
+          </div>
+
+          <div className='text-center mb-20'>
+            <div className='inline-block bg-[#7ee787]/20 text-[#7ee787] px-8 py-4 rounded-full font-bold text-lg'>
+              💰 Save Money: Choose the Most Affordable Solana Rent Reclamation
+              Service
+            </div>
+          </div>
+
           <h2 className='text-5xl font-bold mb-20 text-center text-[#f0f6fc]'>
             Why Choose <span className='text-gradient'>SolanaCraft</span>?
           </h2>

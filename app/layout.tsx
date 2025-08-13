@@ -8,11 +8,12 @@ import { StructuredData } from '@/components/StructuredData';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'SolanaCraft - Professional Solana Platform | bubblepy.com',
+  title:
+    'SolanaCraft - Lowest Fees for Solana Rent Reclamation | 0.0007 SOL per Account',
   description:
-    'Professional Solana platform for token claiming, launching, and NFT minting. Built with cutting-edge technology and enterprise-grade security.',
+    'Most affordable Solana rent reclamation service at 0.0007 SOL per account. Save 30% vs competitors like Sol-Initiator. Professional dApp for token claiming with lowest fees in market.',
   keywords:
-    'Solana, tokens, claiming, launching, NFTs, NFT minting, web3, cryptocurrency, blockchain, SolanaCraft, bubblepy, BSC, Binance Smart Chain',
+    'Solana rent reclamation, lowest fees, token claiming, 0.0007 SOL, dApp, DeFi, web3, cryptocurrency, blockchain, SolanaCraft, bubblepy, market leader, cheapest service',
   authors: [{ name: 'SolanaCraft Team' }, { name: 'bubblepy.com' }],
   creator: 'bubblepy.com',
   publisher: 'bubblepy.com',
@@ -32,10 +33,11 @@ export const metadata: Metadata = {
     shortcut: '/logochecksvg.svg',
     apple: '/logochecksvg.svg',
   },
+  manifest: '/dapp-manifest.json',
   openGraph: {
-    title: 'SolanaCraft - Professional Solana Platform | bubblepy.com',
+    title: 'SolanaCraft - Lowest Fees for Solana Rent Reclamation | 0.0007 SOL',
     description:
-      'Professional Solana platform for token claiming, launching, and NFT minting. Built with cutting-edge technology.',
+      'Save 30% with our 0.0007 SOL fee vs competitors charging 0.001 SOL. Most affordable Solana rent reclamation dApp in the market.',
     type: 'website',
     locale: 'en_US',
     siteName: 'SolanaCraft',
@@ -45,15 +47,15 @@ export const metadata: Metadata = {
         url: '/logochecksvg.svg',
         width: 612,
         height: 792,
-        alt: 'SolanaCraft Logo',
+        alt: 'SolanaCraft - Lowest Fees Solana Platform',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'SolanaCraft - Professional Solana Platform | bubblepy.com',
+    title: 'SolanaCraft - Lowest Fees for Solana Rent Reclamation | 0.0007 SOL',
     description:
-      'Professional Solana platform for token claiming, launching, and NFT minting',
+      'Most affordable Solana rent reclamation dApp. Save 30% vs competitors with our 0.0007 SOL fee.',
     images: ['/logochecksvg.svg'],
     creator: '@bubblepy',
     site: '@bubblepy',
@@ -62,6 +64,13 @@ export const metadata: Metadata = {
     canonical: 'https://solana.bubblepy.com',
   },
   metadataBase: new URL('https://solana.bubblepy.com'),
+  other: {
+    dapp: 'true',
+    blockchain: 'Solana',
+    category: 'DeFi',
+    fee: '0.0007 SOL',
+    advantage: '30% cheaper than competitors',
+  },
 };
 
 export default function RootLayout({

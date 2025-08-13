@@ -1,0 +1,54 @@
+{
+  "name": "SolanaCraft - Lowest Fee Solana Rent Reclamation",
+  "short_name": "SolanaCraft",
+  "description": "Most affordable Solana rent reclamation service at 0.0007 SOL per account. Save 30% vs competitors like Sol-Initiator.",
+  "version": "1.0.0",
+  "manifest_version": 3,
+  "icons": [
+    {
+      "src": "/logochecksvg.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0d1117",
+  "background_color": "#0d1117",
+  "categories": ["finance", "blockchain", "defi", "solana"],
+  "lang": "en",
+  "dir": "ltr",
+  "orientation": "portrait",
+  "scope": "/",
+  "dapp": {
+    "name": "SolanaCraft",
+    "description": "Professional Solana platform for token claiming with lowest fees in market",
+    "category": "DeFi",
+    "blockchain": "Solana",
+    "website": "https://solana.bubblepy.com",
+    "logo": "https://solana.bubblepy.com/logochecksvg.svg",
+    "features": [
+      "Wallet Connection",
+      "Token Account Scanning",
+      "Rent Reclamation",
+      "Lowest Fees (0.0007 SOL)",
+      "Professional UI/UX"
+    ],
+    "pricing": {
+      "fee": "0.0007 SOL",
+      "unit": "per closed account",
+      "advantage": "30% cheaper than competitors"
+    },
+    "supported_wallets": [
+      "Phantom",
+      "Solflare",
+      "Backpack",
+      "Coinbase Wallet",
+      "Ledger",
+      "Solong",
+      "Torus"
+    ],
+    "networks": ["mainnet-beta"],
+    "audience": "Solana users, DeFi enthusiasts, cost-conscious traders"
+  }
+}
