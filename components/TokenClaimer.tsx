@@ -87,7 +87,8 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       console.log('🔍 Starting Sol Incinerator-style scan...');
       console.log('Wallet address:', publicKey.toString());
 
-      const closedAccountsList: ClosedAccountInfo[] = [];
+      const closeableAccountsList: ClosedAccountInfo[] = [];
+      const nonCloseableAccountsList: ClosedAccountInfo[] = [];
       let totalRent = 0;
 
       // Method 1: Get parsed token accounts (Sol Incinerator's main approach)
@@ -116,94 +117,84 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           console.log(`State: ${accountInfo.state}`);
           console.log(`Is Native: ${isNative}`);
 
-          // Sol Incinerator's criteria for closeable accounts:
-          // 1. tokenAmount.amount === "0" (empty account)
-          // 2. Not native SOL
-          // 3. Not frozen
-          if (tokenAmount.amount === '0' && !isNative && !isFrozen) {
-            console.log(`💰 EMPTY ACCOUNT FOUND!`);
+          // Get actual lamports from the account (not static calculation)
+          const accountInfoRaw = await connection.getAccountInfo(pubkey);
+          if (accountInfoRaw) {
+            const actualLamports = accountInfoRaw.lamports;
+            const rentAmount = actualLamports / LAMPORTS_PER_SOL;
 
-            // Get actual lamports from the account (not static calculation)
-            const accountInfoRaw = await connection.getAccountInfo(pubkey);
-            if (accountInfoRaw) {
-              const actualLamports = accountInfoRaw.lamports;
-              const rentAmount = actualLamports / LAMPORTS_PER_SOL;
+            console.log(`Actual lamports: ${actualLamports}`);
+            console.log(`Rent amount: ${rentAmount.toFixed(6)} SOL`);
 
-              console.log(`Actual lamports: ${actualLamports}`);
-              console.log(`Rent amount: ${rentAmount.toFixed(6)} SOL`);
+            if (rentAmount > 0) {
+              // Check if this is an ATA
+              const associatedTokenAddress = await getAssociatedTokenAddress(
+                new PublicKey(mint),
+                publicKey,
+                false,
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              );
 
-              if (rentAmount > 0) {
-                // Check if this is an ATA
-                const associatedTokenAddress = await getAssociatedTokenAddress(
-                  new PublicKey(mint),
-                  publicKey,
-                  false,
-                  TOKEN_PROGRAM_ID,
-                  ASSOCIATED_TOKEN_PROGRAM_ID
-                );
+              const isAssociated = associatedTokenAddress.equals(pubkey);
+              const tokenInfo = await getTokenInfo(mint);
 
-                const isAssociated = associatedTokenAddress.equals(pubkey);
-                const tokenInfo = await getTokenInfo(mint);
+              // Now check if account is truly closeable
+              let canClose = false;
+              let closeReason = '';
 
-                closedAccountsList.push({
-                  mint,
-                  symbol: tokenInfo.symbol,
-                  name: tokenInfo.name,
-                  accountAddress: pubkey.toString(),
-                  rentAmount,
-                  isAssociated,
-                  canClose: true,
-                });
+              if (tokenAmount.amount === '0' && !isNative && !isFrozen) {
+                // Double-check raw data to confirm it's truly empty
+                try {
+                  const accountData = accountInfoRaw.data;
+                  if (accountData.length >= 165) {
+                    const amountBuffer = accountData.slice(64, 72);
+                    const amount = amountBuffer.readBigUInt64LE(0);
 
-                totalRent += rentAmount;
-                console.log(
-                  `✅ ADDED EMPTY ACCOUNT: ${
-                    tokenInfo.symbol
-                  } - ${rentAmount.toFixed(6)} SOL rent`
-                );
+                    if (amount === BigInt(0)) {
+                      canClose = true;
+                      closeReason = 'Empty token account';
+                    } else {
+                      closeReason = `Has ${amount} tokens (not empty)`;
+                    }
+                  } else {
+                    closeReason = 'Invalid token account structure';
+                  }
+                } catch (parseError) {
+                  closeReason = 'Could not verify account data';
+                }
+              } else {
+                if (isNative) {
+                  closeReason = 'Native SOL account (cannot close)';
+                } else if (isFrozen) {
+                  closeReason = 'Frozen account (cannot close)';
+                } else if (tokenAmount.amount !== '0') {
+                  closeReason = `Has ${tokenAmount.amount} tokens (not empty)`;
+                }
               }
-            }
-          } else if (
-            tokenAmount.uiAmount > 0 &&
-            tokenAmount.uiAmount < 0.000001
-          ) {
-            // Check for dust accounts (very small amounts)
-            console.log(
-              `💰 DUST ACCOUNT FOUND: ${tokenAmount.uiAmount} tokens`
-            );
 
-            const accountInfoRaw = await connection.getAccountInfo(pubkey);
-            if (accountInfoRaw) {
-              const actualLamports = accountInfoRaw.lamports;
-              const rentAmount = actualLamports / LAMPORTS_PER_SOL;
+              const accountInfo: ClosedAccountInfo = {
+                mint,
+                symbol: tokenInfo.symbol,
+                name: tokenInfo.name,
+                accountAddress: pubkey.toString(),
+                rentAmount,
+                isAssociated,
+                canClose,
+              };
 
-              if (rentAmount > 0) {
-                const associatedTokenAddress = await getAssociatedTokenAddress(
-                  new PublicKey(mint),
-                  publicKey,
-                  false,
-                  TOKEN_PROGRAM_ID,
-                  ASSOCIATED_TOKEN_PROGRAM_ID
-                );
-
-                const isAssociated = associatedTokenAddress.equals(pubkey);
-                const tokenInfo = await getTokenInfo(mint);
-
-                closedAccountsList.push({
-                  mint,
-                  symbol: tokenInfo.symbol,
-                  name: tokenInfo.name,
-                  accountAddress: pubkey.toString(),
-                  rentAmount,
-                  isAssociated,
-                  canClose: true,
-                });
-
+              if (canClose) {
+                closeableAccountsList.push(accountInfo);
                 totalRent += rentAmount;
                 console.log(
-                  `✅ ADDED DUST ACCOUNT: ${
-                    tokenInfo.symbol
-                  } - ${rentAmount.toFixed(6)} SOL rent`
+                  `✅ CLOSEABLE: ${tokenInfo.symbol} - ${rentAmount.toFixed(
+                    6
+                  )} SOL rent`
+                );
+              } else {
+                nonCloseableAccountsList.push(accountInfo);
+                console.log(
+                  `❌ NOT CLOSEABLE: ${tokenInfo.symbol} - ${closeReason}`
                 );
               }
             }
@@ -218,10 +209,11 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
       console.log(`\n🎯 FINAL RESULTS:`);
       console.log(`Total token accounts: ${parsedAccounts.value.length}`);
-      console.log(`Closeable accounts found: ${closedAccountsList.length}`);
+      console.log(`Closeable accounts: ${closeableAccountsList.length}`);
+      console.log(`Non-closeable accounts: ${nonCloseableAccountsList.length}`);
       console.log(`Total rent available: ${totalRent.toFixed(6)} SOL`);
 
-      if (closedAccountsList.length === 0) {
+      if (closeableAccountsList.length === 0) {
         console.log('❌ NO CLOSEABLE ACCOUNTS FOUND');
         console.log('This means either:');
         console.log('1. All accounts are active with balances');
@@ -229,10 +221,11 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         console.log('3. No empty accounts exist');
       }
 
-      setClosedAccounts(closedAccountsList);
+      // Set both lists so UI can show them separately
+      setClosedAccounts(closeableAccountsList);
       setTotalRentAvailable(totalRent);
 
-      if (closedAccountsList.length === 0) {
+      if (closeableAccountsList.length === 0) {
         setErrorMessage(
           `No closeable accounts found. Scanned ${parsedAccounts.value.length} token accounts.`
         );
@@ -432,16 +425,29 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                 }
               } else {
                 console.log(
-                  `⚠️ Skipping ${account.accountAddress} - has ${amount} tokens`
+                  `⚠️ SKIPPING ${account.accountAddress} - has ${amount} tokens (Error 6009 would occur)`
                 );
+                // Skip this account - don't try to close it
+                continue;
               }
+            } else {
+              console.log(
+                `⚠️ SKIPPING ${account.accountAddress} - not a valid token account`
+              );
+              continue;
             }
           } catch (parseError) {
             console.log(
-              `⚠️ Could not parse account data for ${account.accountAddress}:`,
+              `⚠️ SKIPPING ${account.accountAddress} - could not parse account data:`,
               parseError
             );
+            continue;
           }
+        } else {
+          console.log(
+            `⚠️ SKIPPING ${account.accountAddress} - account not found`
+          );
+          continue;
         }
       }
 
@@ -668,6 +674,33 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             <p className='text-sm mt-2'>
               Try scanning again or check if you have any empty token accounts.
             </p>
+          </div>
+        )}
+
+        {/* NON-CLOSEABLE ACCOUNTS INFO */}
+        {closedAccounts.length > 0 && (
+          <div className='mt-6 p-4 rounded-lg border border-yellow-700 bg-yellow-900/20'>
+            <h3 className='text-lg font-semibold text-yellow-400 flex items-center space-x-2 mb-3'>
+              <AlertCircle className='w-5 h-5' />
+              <span>Account Status</span>
+            </h3>
+            <div className='text-sm text-yellow-300'>
+              <p>
+                ✅ <strong>{closedAccounts.length} accounts</strong> can be
+                closed for rent reclamation
+              </p>
+              <p>❌ Some accounts may not be closeable due to:</p>
+              <ul className='list-disc list-inside mt-2 ml-4 space-y-1 text-yellow-200'>
+                <li>Still containing tokens</li>
+                <li>Being frozen or deactivated</li>
+                <li>Being native SOL accounts</li>
+                <li>Invalid account structure</li>
+              </ul>
+              <p className='mt-2 text-xs text-yellow-400'>
+                Only truly empty token accounts can be closed. Check console
+                logs for detailed analysis of each account.
+              </p>
+            </div>
           </div>
         )}
 
