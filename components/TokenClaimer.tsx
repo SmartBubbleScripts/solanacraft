@@ -304,8 +304,8 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         `🚀 Starting claim for ${selectedAccountInfos.length} accounts...`
       );
 
-      // Batch accounts into chunks of 8 to avoid transaction size limits
-      const batchSize = 8;
+      // Batch accounts into chunks of 3 to avoid transaction size limits
+      const batchSize = 3;
       const batches = [];
       for (let i = 0; i < selectedAccountInfos.length; i += batchSize) {
         batches.push(selectedAccountInfos.slice(i, i + batchSize));
@@ -383,7 +383,13 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             'confirmed'
           );
           if (confirmation.value.err) {
-            throw new Error(`Transaction failed: ${confirmation.value.err}`);
+            console.error(
+              `❌ Transaction error details:`,
+              confirmation.value.err
+            );
+            throw new Error(
+              `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+            );
           }
           console.log(`✅ Batch ${batchIndex + 1} confirmed`);
         } catch (confirmError) {
