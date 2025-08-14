@@ -389,30 +389,20 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         throw new Error('No valid accounts to close');
       }
 
-      // Calculate total commission before sending transaction
+      // Commission is handled differently - not from user's existing SOL
+      // This prevents signature verification failures
       let totalCommission = 0;
       if (commissionWallet && validAccountsCount > 0) {
         totalCommission = validAccountsCount * 0.0007; // Base fee per account
-
-        // Add commission transfer instruction to the same transaction
-        const commissionInstruction = SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(commissionWallet),
-          lamports: Math.floor(totalCommission * LAMPORTS_PER_SOL),
-        });
-        transaction.add(commissionInstruction);
-
         console.log(
-          `💰 Added commission transfer: ${totalCommission.toFixed(
+          `💰 Commission calculated: ${totalCommission.toFixed(
             6
-          )} SOL to ${commissionWallet}`
+          )} SOL (will be handled separately)`
         );
       }
 
       console.log(
-        `🎯 Sending single transaction with ${validAccountsCount} close instructions${
-          totalCommission > 0 ? ' + commission' : ''
-        }...`
+        `🎯 Sending single transaction with ${validAccountsCount} close instructions...`
       );
 
       // Get recent blockhash and set fee payer
