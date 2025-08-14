@@ -376,9 +376,25 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         const signature = await sendTransaction(transaction, connection);
         console.log(`✅ Batch ${batchIndex + 1} processed: ${signature}`);
 
-        // Wait for confirmation
-        await connection.confirmTransaction(signature, 'confirmed');
-        console.log(`✅ Batch ${batchIndex + 1} confirmed`);
+        // Wait for confirmation with longer timeout
+        try {
+          const confirmation = await connection.confirmTransaction(
+            signature,
+            'confirmed'
+          );
+          if (confirmation.value.err) {
+            throw new Error(`Transaction failed: ${confirmation.value.err}`);
+          }
+          console.log(`✅ Batch ${batchIndex + 1} confirmed`);
+        } catch (confirmError) {
+          console.error(
+            `❌ Batch ${batchIndex + 1} confirmation failed:`,
+            confirmError
+          );
+          throw new Error(
+            `Batch ${batchIndex + 1} failed to confirm: ${confirmError}`
+          );
+        }
 
         // Small delay between batches to avoid rate limiting
         if (batchIndex < batches.length - 1) {
