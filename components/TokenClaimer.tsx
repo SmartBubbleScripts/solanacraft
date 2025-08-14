@@ -415,6 +415,11 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         }...`
       );
 
+      // Get recent blockhash and set fee payer
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
       // Send the single transaction with all close instructions
       const signature = await sendTransaction(transaction, connection);
       console.log(`✅ Single transaction sent: ${signature}`);
