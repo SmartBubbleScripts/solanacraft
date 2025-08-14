@@ -339,14 +339,11 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           transaction.add(closeInstruction);
         }
 
-        // Calculate fees for this batch
+        // Calculate total rent for this batch
         const batchRent = batch.reduce(
           (sum, account) => sum + account.rentAmount,
           0
         );
-
-        // Estimate network fee for this transaction
-        const estimatedNetworkFee = 0.00015; // Conservative estimate
 
         // Calculate commission for this batch
         let batchCommission = 0.0007; // Base fee per wallet
@@ -354,40 +351,26 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           batchCommission = Math.max(0.0007, batchRent * 0.05);
         }
 
-        // Total fees for this batch
-        const totalBatchFees = estimatedNetworkFee + batchCommission;
+        // Send commission to your wallet (if configured)
+        if (commissionWallet && batchCommission > 0) {
+          const commissionInstruction = SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(commissionWallet),
+            lamports: Math.floor(batchCommission * LAMPORTS_PER_SOL),
+          });
+          transaction.add(commissionInstruction);
 
-        // If batch rent can cover fees, deduct them
-        if (batchRent >= totalBatchFees) {
-          // Send commission to your wallet
-          if (commissionWallet && batchCommission > 0) {
-            const commissionInstruction = SystemProgram.transfer({
-              fromPubkey: publicKey,
-              toPubkey: new PublicKey(commissionWallet),
-              lamports: Math.floor(batchCommission * LAMPORTS_PER_SOL),
-            });
-            transaction.add(commissionInstruction);
-          }
-
-          // User gets: batchRent - totalBatchFees
-          const userReceives = batchRent - totalBatchFees;
-          totalClaimed += userReceives;
-
-          console.log(
-            `💰 Batch ${batchIndex + 1}: Rent ${batchRent.toFixed(
-              6
-            )} SOL, Fees ${totalBatchFees.toFixed(
-              6
-            )} SOL, User gets ${userReceives.toFixed(6)} SOL`
-          );
-        } else {
-          // If batch can't cover fees, user gets nothing from this batch
-          console.log(
-            `⚠️ Batch ${batchIndex + 1}: Rent ${batchRent.toFixed(
-              6
-            )} SOL too low to cover fees ${totalBatchFees.toFixed(6)} SOL`
-          );
+          console.log(`💰 Commission: ${batchCommission.toFixed(6)} SOL`);
         }
+
+        // User gets the full batch rent (commission is sent separately)
+        totalClaimed += batchRent;
+
+        console.log(
+          `💰 Batch ${batchIndex + 1}: Rent ${batchRent.toFixed(
+            6
+          )} SOL, Commission ${batchCommission.toFixed(6)} SOL`
+        );
 
         // Send the transaction
         const signature = await sendTransaction(transaction, connection);
@@ -403,13 +386,10 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         }
       }
 
-      // Remove the separate commission transaction since we're handling it per batch
       console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
 
       setClaimSuccess(
-        `Successfully claimed ${totalClaimed.toFixed(6)} SOL from ${
-          selectedAccountInfos.length
-        } accounts! Your SOL has been returned to your wallet.`
+        `Successfully claimed SOL from ${selectedAccountInfos.length} accounts! Your SOL has been returned to your wallet.`
       );
 
       // Update the UI
