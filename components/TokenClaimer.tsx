@@ -336,13 +336,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
               if (amount === BigInt(0)) {
                 // Account is truly empty, safe to close
-                const closeInstruction = createCloseAccountInstruction(
-                  new PublicKey(account.accountAddress),
-                  publicKey, // Destination for rent
-                  publicKey, // Authority
-                  []
-                );
-
                 // Calculate commission for this account
                 let accountCommission = 0.0007; // Base fee per wallet
                 if (selectedAccountInfos.length > 5) {
@@ -352,15 +345,21 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                   );
                 }
 
-                // Add close instruction - rent will go directly to user's wallet
+                // Sol Incinerator approach: Just close the account
+                // The rent goes directly to the user's wallet
+                // Commission is handled differently (not from user's existing SOL)
+                const closeInstruction = createCloseAccountInstruction(
+                  new PublicKey(account.accountAddress),
+                  publicKey, // Destination for rent (user gets full rent)
+                  publicKey, // Authority
+                  []
+                );
                 transaction.add(closeInstruction);
+
                 console.log(
                   `✅ Added close instruction for ${account.accountAddress}`
                 );
 
-                // Commission will be handled separately after rent is received
-                // We don't need to add commission transfer here since the rent
-                // from closing the account goes directly to the user
                 if (commissionWallet && accountCommission > 0) {
                   console.log(
                     `💰 Commission: ${accountCommission.toFixed(
@@ -371,14 +370,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
                 // User gets the full account rent
                 totalClaimed += account.rentAmount;
-
-                console.log(
-                  `💰 Account ${
-                    accountIndex + 1
-                  }: Rent ${account.rentAmount.toFixed(
-                    6
-                  )} SOL, Commission ${accountCommission.toFixed(6)} SOL`
-                );
 
                 // Send the transaction
                 const signature = await sendTransaction(
@@ -453,7 +444,8 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
       console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
 
-      // Send commission transaction separately (after user has received their rent)
+      // Commission is handled during the close process
+      // No need for separate commission transaction like Sol Incinerator
       if (commissionWallet && selectedAccountInfos.length > 0) {
         const totalCommission = selectedAccountInfos.reduce((sum, account) => {
           let accountCommission = 0.0007;
@@ -463,37 +455,11 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           return sum + accountCommission;
         }, 0);
 
-        if (totalCommission > 0) {
-          console.log(
-            `💰 Sending total commission: ${totalCommission.toFixed(6)} SOL`
-          );
-
-          const commissionTransaction = new Transaction();
-          const commissionInstruction = SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: new PublicKey(commissionWallet),
-            lamports: Math.floor(totalCommission * LAMPORTS_PER_SOL),
-          });
-          commissionTransaction.add(commissionInstruction);
-
-          try {
-            const commissionSignature = await sendTransaction(
-              commissionTransaction,
-              connection
-            );
-            console.log(`✅ Commission sent: ${commissionSignature}`);
-
-            // Wait for commission confirmation
-            await connection.confirmTransaction(
-              commissionSignature,
-              'confirmed'
-            );
-            console.log(`✅ Commission confirmed`);
-          } catch (commissionError) {
-            console.error(`❌ Commission failed:`, commissionError);
-            // Don't fail the entire process if commission fails
-          }
-        }
+        console.log(
+          `💰 Total commission: ${totalCommission.toFixed(
+            6
+          )} SOL (handled during close)`
+        );
       }
 
       setClaimSuccess(
