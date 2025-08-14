@@ -37,8 +37,13 @@ export const WalletProvider: FC<Props> = ({ children }) => {
 
   // You can also provide a custom RPC endpoint
   const endpoint = useMemo(() => {
-    return process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl(network);
-  }, [network]);
+    // Use QuickNode as primary, fallback to Alchemy if not configured
+    return (
+      process.env.NEXT_PUBLIC_QUICKNODE_RPC_URL ||
+      process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL ||
+      'https://api.mainnet-beta.solana.com'
+    );
+  }, []);
 
   const wallets = useMemo(
     () => [

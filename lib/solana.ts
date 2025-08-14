@@ -161,17 +161,14 @@ export const NETWORKS = {
   },
   mainnet: {
     name: 'Mainnet',
-    // Production RPC endpoints with fallbacks
+    // Production RPC endpoints with QuickNode as primary
     rpcUrls: [
-      // Primary: Helius (free tier - 100M requests/month)
-      process.env.NEXT_PUBLIC_HELIUS_RPC_URL ||
-        'https://rpc.helius.xyz/?api-key=YOUR_API_KEY',
-      // Fallback 1: QuickNode (free tier - 3M requests/month)
-      process.env.NEXT_PUBLIC_QUICKNODE_RPC_URL ||
-        'https://your-endpoint.solana-mainnet.quiknode.pro/YOUR_QUICKNODE_API_KEY/',
+      // Primary: QuickNode (free tier - 3M requests/month)
+      process.env.NEXT_PUBLIC_QUICKNODE_RPC_URL || 'https://multi-withered-sky.solana-mainnet.quiknode.pro/YOUR_QUICKNODE_API_KEY/',
+      // Fallback 1: Helius (free tier - 100M requests/month)
+      process.env.NEXT_PUBLIC_HELIUS_RPC_URL || 'https://rpc.helius.xyz/?api-key=YOUR_API_KEY',
       // Fallback 2: Alchemy (free tier - 300M compute units/month)
-      process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL ||
-        'https://solana-mainnet.g.alchemy.com/v2/pdo98slNo1UDfhpnC-r7J',
+      process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL || 'https://solana-mainnet.g.alchemy.com/v2/pdo98slNo1UDfhpnC-r7J',
       // Last resort: Public RPC (not recommended for production)
       'https://api.mainnet-beta.solana.com',
     ],

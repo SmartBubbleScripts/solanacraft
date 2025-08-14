@@ -47,14 +47,16 @@ interface ClosedAccountInfo {
 export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
   const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
-  const [isLoading, setIsLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [claimStatus, setClaimStatus] = useState<
-    'idle' | 'processing' | 'success' | 'error'
-  >('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [closedAccounts, setClosedAccounts] = useState<ClosedAccountInfo[]>([]);
-  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(
+    new Set()
+  );
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string>('');
+  const [claimSuccess, setClaimSuccess] = useState<string>('');
+  const [includeATAs, setIncludeATAs] = useState(false); // New state for ATA handling
   const [totalRentAvailable, setTotalRentAvailable] = useState(0);
 
   const scanForClosedAccounts = async () => {
@@ -69,239 +71,123 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       const closedAccountsList: ClosedAccountInfo[] = [];
       let totalRent = 0;
 
-      // Try multiple RPC endpoints to avoid rate limiting
-      const rpcEndpoints = [
-        'https://api.mainnet-beta.solana.com',
-        'https://solana-api.projectserum.com',
-        'https://rpc.ankr.com/solana',
-        'https://solana.public-rpc.com',
-      ];
-
-      let allAccounts: any = [];
-      let rpcIndex = 0;
-
-      // Try to get accounts with different RPC endpoints
-      while (allAccounts.length === 0 && rpcIndex < rpcEndpoints.length) {
-        try {
-          console.log(
-            `📡 Trying RPC endpoint ${rpcIndex + 1}: ${rpcEndpoints[rpcIndex]}`
-          );
-
-          const tempConnection = new Connection(
-            rpcEndpoints[rpcIndex],
-            'confirmed'
-          );
-
-          // Simplified getProgramAccounts call to avoid 400 errors
-          allAccounts = await tempConnection.getProgramAccounts(
-            TOKEN_PROGRAM_ID,
-            {
-              filters: [
-                {
-                  dataSize: 165, // Standard token account size
-                },
-                {
-                  memcmp: {
-                    offset: 32, // Owner offset in token account
-                    bytes: publicKey.toBase58(),
-                  },
-                },
-              ],
-            }
-          );
-
-          console.log(
-            `✅ Success with RPC ${rpcIndex + 1}: Found ${
-              allAccounts.length
-            } accounts`
-          );
-
-          // If we got accounts, break out of the loop
-          if (allAccounts.length > 0) {
-            break;
-          }
-        } catch (error) {
-          console.log(`❌ RPC ${rpcIndex + 1} failed:`, error);
-          rpcIndex++;
-
-          if (rpcIndex >= rpcEndpoints.length) {
-            console.log('❌ All RPC endpoints failed');
-            setErrorMessage(
-              'All RPC endpoints failed. Please try again later.'
-            );
-            return;
-          }
-        }
-      }
-
-      // If still no accounts, try a simpler approach
-      if (allAccounts.length === 0) {
-        console.log(
-          '🔄 No accounts found with getProgramAccounts, trying simpler method...'
-        );
-
-        try {
-          // Try with just the owner filter
-          allAccounts = await connection.getProgramAccounts(TOKEN_PROGRAM_ID, {
-            filters: [
-              {
-                memcmp: {
-                  offset: 32,
-                  bytes: publicKey.toBase58(),
-                },
-              },
-            ],
-          });
-
-          console.log(`✅ Simple method found ${allAccounts.length} accounts`);
-        } catch (simpleError) {
-          console.log('❌ Simple method also failed:', simpleError);
-
-          // Last resort: just use parsed accounts
-          console.log('🔄 Falling back to parsed accounts only...');
-          allAccounts = [];
-        }
-      }
-
-      console.log(
-        `Found ${allAccounts.length} total accounts with getProgramAccounts`
-      );
-
-      // Method 2: Get parsed token accounts (what we were doing before)
-      console.log('📡 Method 2: Getting parsed token accounts...');
+      // Method 1: Get parsed token accounts (Sol Incinerator's main approach)
+      console.log('📡 Getting parsed token accounts...');
       const parsedAccounts = await connection.getParsedTokenAccountsByOwner(
         publicKey,
         { programId: TOKEN_PROGRAM_ID }
       );
 
-      console.log(`Found ${parsedAccounts.value.length} parsed token accounts`);
+      console.log(`Found ${parsedAccounts.value.length} token accounts`);
 
-      // Method 3: Check each account from getProgramAccounts
-      console.log('📡 Method 3: Analyzing each account for closeability...');
-
-      for (let i = 0; i < allAccounts.length; i++) {
-        const account = allAccounts[i];
-        const pubkey = account.pubkey;
-
+      // Check each account for closeability (Sol Incinerator logic)
+      for (const { account, pubkey } of parsedAccounts.value) {
         try {
-          console.log(`\n--- Account ${i + 1} ---`);
-          console.log(`Address: ${pubkey.toString()}`);
+          const accountInfo = account.data.parsed.info;
+          const tokenAmount = accountInfo.tokenAmount;
+          const mint = accountInfo.mint;
+          const isFrozen = accountInfo.state === 'frozen';
+          const isNative = accountInfo.isNative;
 
-          // Get raw account info
-          const accountInfo = await connection.getAccountInfo(pubkey);
+          console.log(`\n--- Account: ${pubkey.toString()} ---`);
+          console.log(`Mint: ${mint}`);
+          console.log(
+            `Amount: ${tokenAmount.uiAmount} (${tokenAmount.amount})`
+          );
+          console.log(`State: ${accountInfo.state}`);
+          console.log(`Is Native: ${isNative}`);
 
-          if (!accountInfo) {
-            console.log(
-              `❌ Account doesn't exist - might be closed but with rent`
-            );
+          // Sol Incinerator's criteria for closeable accounts:
+          // 1. tokenAmount.amount === "0" (empty account)
+          // 2. Not native SOL
+          // 3. Not frozen
+          if (tokenAmount.amount === '0' && !isNative && !isFrozen) {
+            console.log(`💰 EMPTY ACCOUNT FOUND!`);
 
-            // Check if this could be a closed account with rent
-            const standardTokenAccountSize = 165;
-            const rentExemption =
-              await connection.getMinimumBalanceForRentExemption(
-                standardTokenAccountSize
-              );
-            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+            // Get actual lamports from the account (not static calculation)
+            const accountInfoRaw = await connection.getAccountInfo(pubkey);
+            if (accountInfoRaw) {
+              const actualLamports = accountInfoRaw.lamports;
+              const rentAmount = actualLamports / LAMPORTS_PER_SOL;
 
-            if (rentAmount > 0) {
-              closedAccountsList.push({
-                mint: 'Unknown',
-                symbol: 'CLOSED',
-                name: 'Closed Account',
-                accountAddress: pubkey.toString(),
-                rentAmount,
-                isAssociated: false,
-                canClose: true,
-              });
+              console.log(`Actual lamports: ${actualLamports}`);
+              console.log(`Rent amount: ${rentAmount.toFixed(6)} SOL`);
 
-              totalRent += rentAmount;
-              console.log(
-                `✅ ADDED CLOSED ACCOUNT: ${rentAmount.toFixed(4)} SOL rent`
-              );
-            }
-            continue;
-          }
+              if (rentAmount > 0) {
+                // Check if this is an ATA
+                const associatedTokenAddress = await getAssociatedTokenAddress(
+                  new PublicKey(mint),
+                  publicKey,
+                  false,
+                  TOKEN_PROGRAM_ID,
+                  ASSOCIATED_TOKEN_PROGRAM_ID
+                );
 
-          if (accountInfo.data.length === 0) {
-            console.log(
-              `❌ Account exists but has no data - definitely closed`
-            );
+                const isAssociated = associatedTokenAddress.equals(pubkey);
+                const tokenInfo = await getTokenInfo(mint);
 
-            const standardTokenAccountSize = 165;
-            const rentExemption =
-              await connection.getMinimumBalanceForRentExemption(
-                standardTokenAccountSize
-              );
-            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+                closedAccountsList.push({
+                  mint,
+                  symbol: tokenInfo.symbol,
+                  name: tokenInfo.name,
+                  accountAddress: pubkey.toString(),
+                  rentAmount,
+                  isAssociated,
+                  canClose: true,
+                });
 
-            if (rentAmount > 0) {
-              closedAccountsList.push({
-                mint: 'Unknown',
-                symbol: 'CLOSED',
-                name: 'Closed Account',
-                accountAddress: pubkey.toString(),
-                rentAmount,
-                isAssociated: false,
-                canClose: true,
-              });
-
-              totalRent += rentAmount;
-              console.log(
-                `✅ ADDED CLOSED ACCOUNT: ${rentAmount.toFixed(4)} SOL rent`
-              );
-            }
-            continue;
-          }
-
-          // Try to parse the account data
-          try {
-            // This is what Sol Incinerator probably does - parse raw account data
-            const accountData = accountInfo.data;
-            console.log(`Account data length: ${accountData.length}`);
-
-            // Check if this is a token account by looking at the data structure
-            if (accountData.length >= 165) {
-              // This looks like a token account
-              console.log(`🔍 This looks like a token account`);
-
-              // Try to get token amount from raw data
-              // Token amount is at offset 64, 8 bytes
-              const amountBuffer = accountData.slice(64, 72);
-              const amount = amountBuffer.readBigUInt64LE(0);
-              console.log(`Raw amount from data: ${amount}`);
-
-              if (amount === BigInt(0)) {
-                console.log(`💰 EMPTY ACCOUNT FOUND IN RAW DATA!`);
-
-                const standardTokenAccountSize = 165;
-                const rentExemption =
-                  await connection.getMinimumBalanceForRentExemption(
-                    standardTokenAccountSize
-                  );
-                const rentAmount = rentExemption / LAMPORTS_PER_SOL;
-
-                if (rentAmount > 0) {
-                  closedAccountsList.push({
-                    mint: 'Unknown',
-                    symbol: 'EMPTY',
-                    name: 'Empty Token Account',
-                    accountAddress: pubkey.toString(),
-                    rentAmount,
-                    isAssociated: false,
-                    canClose: true,
-                  });
-
-                  totalRent += rentAmount;
-                  console.log(
-                    `✅ ADDED EMPTY ACCOUNT: ${rentAmount.toFixed(4)} SOL rent`
-                  );
-                }
-              } else {
-                console.log(`📊 Account has ${amount} tokens (not empty)`);
+                totalRent += rentAmount;
+                console.log(
+                  `✅ ADDED EMPTY ACCOUNT: ${
+                    tokenInfo.symbol
+                  } - ${rentAmount.toFixed(6)} SOL rent`
+                );
               }
             }
-          } catch (parseError) {
-            console.log(`⚠️ Could not parse account data:`, parseError);
+          } else if (
+            tokenAmount.uiAmount > 0 &&
+            tokenAmount.uiAmount < 0.000001
+          ) {
+            // Check for dust accounts (very small amounts)
+            console.log(
+              `💰 DUST ACCOUNT FOUND: ${tokenAmount.uiAmount} tokens`
+            );
+
+            const accountInfoRaw = await connection.getAccountInfo(pubkey);
+            if (accountInfoRaw) {
+              const actualLamports = accountInfoRaw.lamports;
+              const rentAmount = actualLamports / LAMPORTS_PER_SOL;
+
+              if (rentAmount > 0) {
+                const associatedTokenAddress = await getAssociatedTokenAddress(
+                  new PublicKey(mint),
+                  publicKey,
+                  false,
+                  TOKEN_PROGRAM_ID,
+                  ASSOCIATED_TOKEN_PROGRAM_ID
+                );
+
+                const isAssociated = associatedTokenAddress.equals(pubkey);
+                const tokenInfo = await getTokenInfo(mint);
+
+                closedAccountsList.push({
+                  mint,
+                  symbol: tokenInfo.symbol,
+                  name: tokenInfo.name,
+                  accountAddress: pubkey.toString(),
+                  rentAmount,
+                  isAssociated,
+                  canClose: true,
+                });
+
+                totalRent += rentAmount;
+                console.log(
+                  `✅ ADDED DUST ACCOUNT: ${
+                    tokenInfo.symbol
+                  } - ${rentAmount.toFixed(6)} SOL rent`
+                );
+              }
+            }
           }
         } catch (error) {
           console.log(
@@ -311,131 +197,17 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         }
       }
 
-      // Method 4: Also check parsed accounts for empty ones
-      console.log('📡 Method 4: Checking parsed accounts for empty ones...');
-
-      for (const { account, pubkey } of parsedAccounts.value) {
-        const accountInfo = account.data.parsed.info;
-        const tokenAmount = accountInfo.tokenAmount.uiAmount;
-        const mint = accountInfo.mint;
-
-        if (tokenAmount === 0) {
-          console.log(
-            `💰 Found empty account in parsed data: ${pubkey.toString()}`
-          );
-
-          const standardTokenAccountSize = 165;
-          const rentExemption =
-            await connection.getMinimumBalanceForRentExemption(
-              standardTokenAccountSize
-            );
-          const rentAmount = rentExemption / LAMPORTS_PER_SOL;
-
-          if (rentAmount > 0) {
-            const associatedTokenAddress = await getAssociatedTokenAddress(
-              new PublicKey(mint),
-              publicKey,
-              false,
-              TOKEN_PROGRAM_ID,
-              ASSOCIATED_TOKEN_PROGRAM_ID
-            );
-
-            const isAssociated = associatedTokenAddress.equals(pubkey);
-            const tokenInfo = await getTokenInfo(mint);
-
-            // Check if already added
-            const existingAccount = closedAccountsList.find(
-              (acc) => acc.accountAddress === pubkey.toString()
-            );
-            if (!existingAccount) {
-              closedAccountsList.push({
-                mint,
-                symbol: tokenInfo.symbol,
-                name: tokenInfo.name,
-                accountAddress: pubkey.toString(),
-                rentAmount,
-                isAssociated,
-                canClose: true,
-              });
-
-              totalRent += rentAmount;
-              console.log(
-                `✅ ADDED EMPTY ACCOUNT: ${
-                  tokenInfo.symbol
-                } - ${rentAmount.toFixed(4)} SOL rent`
-              );
-            }
-          }
-        }
-      }
-
-      // Method 5: Final fallback - just scan what we can see
-      if (closedAccountsList.length === 0 && parsedAccounts.value.length > 0) {
-        console.log('🔄 No closeable accounts found, doing final scan...');
-
-        for (const { account, pubkey } of parsedAccounts.value) {
-          const accountInfo = account.data.parsed.info;
-          const tokenAmount = accountInfo.tokenAmount.uiAmount;
-          const mint = accountInfo.mint;
-
-          console.log(`Account ${pubkey.toString()}: ${tokenAmount} tokens`);
-
-          // Check for dust amounts
-          if (tokenAmount > 0 && tokenAmount < 0.000001) {
-            console.log(`💰 Found dust account: ${tokenAmount} tokens`);
-
-            const standardTokenAccountSize = 165;
-            const rentExemption =
-              await connection.getMinimumBalanceForRentExemption(
-                standardTokenAccountSize
-              );
-            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
-
-            if (rentAmount > 0) {
-              const associatedTokenAddress = await getAssociatedTokenAddress(
-                new PublicKey(mint),
-                publicKey,
-                false,
-                TOKEN_PROGRAM_ID,
-                ASSOCIATED_TOKEN_PROGRAM_ID
-              );
-
-              const isAssociated = associatedTokenAddress.equals(pubkey);
-              const tokenInfo = await getTokenInfo(mint);
-
-              closedAccountsList.push({
-                mint,
-                symbol: tokenInfo.symbol,
-                name: tokenInfo.name,
-                accountAddress: pubkey.toString(),
-                rentAmount,
-                isAssociated,
-                canClose: true,
-              });
-
-              totalRent += rentAmount;
-              console.log(
-                `✅ ADDED DUST ACCOUNT: ${
-                  tokenInfo.symbol
-                } - ${rentAmount.toFixed(4)} SOL rent`
-              );
-            }
-          }
-        }
-      }
-
       console.log(`\n🎯 FINAL RESULTS:`);
-      console.log(`Total accounts found: ${allAccounts.length}`);
-      console.log(`Parsed accounts: ${parsedAccounts.value.length}`);
+      console.log(`Total token accounts: ${parsedAccounts.value.length}`);
       console.log(`Closeable accounts found: ${closedAccountsList.length}`);
-      console.log(`Total rent available: ${totalRent.toFixed(4)} SOL`);
+      console.log(`Total rent available: ${totalRent.toFixed(6)} SOL`);
 
       if (closedAccountsList.length === 0) {
         console.log('❌ NO CLOSEABLE ACCOUNTS FOUND');
         console.log('This means either:');
         console.log('1. All accounts are active with balances');
-        console.log('2. Our scanning method is still wrong');
-        console.log('3. Sol Incinerator uses a different technique');
+        console.log('2. All accounts are native SOL or frozen');
+        console.log('3. No empty accounts exist');
       }
 
       setClosedAccounts(closedAccountsList);
@@ -443,15 +215,15 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
       if (closedAccountsList.length === 0) {
         setErrorMessage(
-          `No closeable accounts found. Scanned ${allAccounts.length} total accounts. Check console for detailed analysis.`
+          `No closeable accounts found. Scanned ${parsedAccounts.value.length} token accounts.`
         );
       }
     } catch (error) {
-      console.error('❌ Error during Sol Incinerator-style scan:', error);
+      console.error('❌ Error during scan:', error);
       setErrorMessage(
         `Scan failed: ${
           error instanceof Error ? error.message : 'Unknown error'
-        }. Check console for details.`
+        }`
       );
     } finally {
       setIsScanning(false);
@@ -487,73 +259,158 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
   };
 
   const handleAccountSelection = (accountAddress: string) => {
-    setSelectedAccounts((prev) =>
-      prev.includes(accountAddress)
-        ? prev.filter((a) => a !== accountAddress)
-        : [...prev, accountAddress]
-    );
+    setSelectedAccounts((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(accountAddress)) {
+        newSet.delete(accountAddress);
+      } else {
+        newSet.add(accountAddress);
+      }
+      return newSet;
+    });
   };
 
   const handleClaimRent = async () => {
-    if (!publicKey || selectedAccounts.length === 0 || !connection) return;
-    setIsLoading(true);
-    setClaimStatus('processing');
-    setErrorMessage('');
+    if (!publicKey || selectedAccounts.size === 0 || !connection) return;
+    setIsClaiming(true);
+    setClaimError('');
+    setClaimSuccess('');
+
     try {
       const selectedAccountInfos = closedAccounts.filter((a) =>
-        selectedAccounts.includes(a.accountAddress)
+        selectedAccounts.has(a.accountAddress)
       );
-      const transaction = new Transaction();
-      for (const accountInfo of selectedAccountInfos) {
-        const closeInstruction = createCloseAccountInstruction(
-          new PublicKey(accountInfo.accountAddress),
-          publicKey,
-          publicKey,
-          []
-        );
-        transaction.add(closeInstruction);
+
+      console.log(
+        `🚀 Starting claim for ${selectedAccountInfos.length} accounts...`
+      );
+
+      // Batch accounts into chunks of 8 to avoid transaction size limits
+      const batchSize = 8;
+      const batches = [];
+      for (let i = 0; i < selectedAccountInfos.length; i += batchSize) {
+        batches.push(selectedAccountInfos.slice(i, i + batchSize));
       }
+
+      console.log(`📦 Processing ${batches.length} batches...`);
+
+      let totalClaimed = 0;
       const commissionWallet =
         process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
-      if (commissionWallet) {
-        // New fee structure: 0.0007 SOL per wallet + 5% of client receive amount if >5 accounts
-        const accountCount = selectedAccounts.length;
-        let commissionAmount = 0.0007; // Base fee per wallet
 
-        if (accountCount > 5) {
-          // Calculate 5% of what the client will receive
-          const totalRent = getTotalSelectedRent();
-          const additionalCommission = totalRent * 0.05; // 5% of total rent
-          commissionAmount += additionalCommission;
+      // Process each batch separately
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        console.log(
+          `📦 Processing batch ${batchIndex + 1}/${batches.length} with ${
+            batch.length
+          } accounts`
+        );
+
+        const transaction = new Transaction();
+
+        // Add close instructions for this batch
+        for (const account of batch) {
+          const closeInstruction = createCloseAccountInstruction(
+            new PublicKey(account.accountAddress),
+            publicKey, // Destination for rent
+            publicKey, // Authority
+            []
+          );
+          transaction.add(closeInstruction);
         }
 
-        const transferInstruction = SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(commissionWallet),
-          lamports: commissionAmount * LAMPORTS_PER_SOL,
-        });
-        transaction.add(transferInstruction);
+        // Send the close transaction
+        const signature = await sendTransaction(transaction, connection);
+        console.log(`✅ Batch ${batchIndex + 1} closed: ${signature}`);
+
+        // Wait for confirmation
+        await connection.confirmTransaction(signature, 'confirmed');
+        console.log(`✅ Batch ${batchIndex + 1} confirmed`);
+
+        // Calculate rent for this batch
+        const batchRent = batch.reduce(
+          (sum, account) => sum + account.rentAmount,
+          0
+        );
+        totalClaimed += batchRent;
+
+        // Small delay between batches to avoid rate limiting
+        if (batchIndex < batches.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
-      const signature = await sendTransaction(transaction, connection);
-      await connection.confirmTransaction(signature, 'confirmed');
-      setClaimStatus('success');
-      setClosedAccounts((prev) =>
-        prev.filter((a) => !selectedAccounts.includes(a.accountAddress))
+
+      // Send commission in a separate transaction (if any)
+      if (commissionWallet) {
+        try {
+          const accountCount = selectedAccountInfos.length;
+          let commissionAmount = 0.0007; // Base fee per wallet
+
+          if (accountCount > 5) {
+            // 5% of total claimed amount for large claims
+            commissionAmount = Math.max(0.0007, totalClaimed * 0.05);
+          }
+
+          if (commissionAmount > 0) {
+            console.log(
+              `💰 Sending commission: ${commissionAmount.toFixed(6)} SOL`
+            );
+
+            const commissionTransaction = new Transaction().add(
+              SystemProgram.transfer({
+                fromPubkey: publicKey,
+                toPubkey: new PublicKey(commissionWallet),
+                lamports: Math.floor(commissionAmount * LAMPORTS_PER_SOL),
+              })
+            );
+
+            const commissionSignature = await sendTransaction(
+              commissionTransaction,
+              connection
+            );
+            await connection.confirmTransaction(
+              commissionSignature,
+              'confirmed'
+            );
+            console.log(`✅ Commission sent: ${commissionSignature}`);
+          }
+        } catch (commissionError) {
+          console.warn(
+            '⚠️ Commission failed, but claim succeeded:',
+            commissionError
+          );
+          // Don't fail the entire claim if commission fails
+        }
+      }
+
+      setClaimSuccess(
+        `Successfully claimed ${totalClaimed.toFixed(6)} SOL from ${
+          selectedAccountInfos.length
+        } accounts!`
       );
-      setSelectedAccounts([]);
+
+      // Update the UI
+      setClosedAccounts((prev) =>
+        prev.filter((a) => !selectedAccounts.has(a.accountAddress))
+      );
+      setSelectedAccounts(new Set());
+      setTotalRentAvailable((prev) => prev - totalClaimed);
     } catch (error) {
-      setClaimStatus('error');
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to claim rent'
+      console.error('❌ Claim failed:', error);
+      setClaimError(
+        `Claim failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
       );
     } finally {
-      setIsLoading(false);
+      setIsClaiming(false);
     }
   };
 
   const getTotalSelectedRent = () => {
     return closedAccounts
-      .filter((a) => selectedAccounts.includes(a.accountAddress))
+      .filter((a) => selectedAccounts.has(a.accountAddress))
       .reduce((sum, account) => sum + account.rentAmount, 0);
   };
 
@@ -648,81 +505,104 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
       {/* LIST */}
       <div>
-        <h3 className='text-lg font-semibold mb-4 text-white flex items-center space-x-2'>
-          <Coins className='w-5 h-5 text-[#58a6ff]' />
-          <span>Closed Token Accounts</span>
-          {closedAccounts.length > 0 && (
-            <span className='text-sm text-gray-400'>
-              ({closedAccounts.length} found)
-            </span>
-          )}
-        </h3>
-        {closedAccounts.length === 0 ? (
-          <div className='text-center py-8 text-gray-500'>
-            {isScanning ? (
-              <div className='flex items-center justify-center space-x-2'>
-                <Loader2 className='w-5 h-5 animate-spin' />
-                <span>Scanning for closed accounts...</span>
-              </div>
-            ) : (
-              <div>
-                <p>No closed token accounts found with rent to reclaim.</p>
-                <p className='text-sm mt-2'>
-                  Try scanning again or check if you have any empty token
-                  accounts.
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className='space-y-4'>
-            {closedAccounts.map((account) => (
-              <label
-                key={account.accountAddress}
-                className='flex items-center p-5 rounded-xl border border-gray-700 hover:border-[#58a6ff] hover:bg-gray-900 transition cursor-pointer'
-              >
-                <input
-                  type='checkbox'
-                  checked={selectedAccounts.includes(account.accountAddress)}
-                  onChange={() =>
-                    handleAccountSelection(account.accountAddress)
-                  }
-                  className='w-5 h-5 text-[#58a6ff] rounded focus:ring-[#58a6ff]'
-                />
-                <div className='ml-4 flex-1 flex justify-between items-center'>
-                  <div className='flex items-center space-x-3'>
-                    <div className='w-12 h-12 bg-gradient-to-r from-[#58a6ff] to-[#1f6feb] rounded-lg flex items-center justify-center text-white font-bold'>
-                      {account.symbol[0]}
-                    </div>
-                    <div>
-                      <div className='font-semibold text-white'>
-                        {account.symbol}
-                      </div>
-                      <div className='text-gray-400 text-sm'>
-                        {account.name}
-                      </div>
-                      <div className='text-xs text-gray-500'>
-                        {account.isAssociated
-                          ? 'Associated Token Account'
-                          : 'Token Account'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className='text-right'>
-                    <span className='text-[#7ee787] font-mono'>
-                      {account.rentAmount.toFixed(4)} SOL
-                    </span>
-                    <p className='text-xs text-gray-500'>Locked Rent</p>
-                  </div>
-                </div>
+        {/* ACCOUNT LIST */}
+        {closedAccounts.length > 0 && (
+          <div className='mt-6 space-y-4'>
+            {/* ATA Filter Checkbox */}
+            <div className='flex items-center space-x-3 p-4 rounded-lg border border-gray-700 bg-gray-800/30'>
+              <input
+                type='checkbox'
+                id='includeATAs'
+                checked={includeATAs}
+                onChange={(e) => setIncludeATAs(e.target.checked)}
+                className='w-4 h-4 text-[#58a6ff] bg-gray-700 border-gray-600 rounded focus:ring-[#58a6ff] focus:ring-2'
+              />
+              <label htmlFor='includeATAs' className='text-sm text-gray-300'>
+                Include Associated Token Accounts (ATAs) - These will be
+                automatically recreated by wallets
               </label>
-            ))}
+            </div>
+
+            <h3 className='text-lg font-semibold text-white flex items-center space-x-2'>
+              <Coins className='w-5 h-5 text-[#58a6ff]' />
+              <span>Closeable Accounts</span>
+              <span className='text-sm text-gray-400'>
+                (
+                {
+                  closedAccounts.filter(
+                    (account) => includeATAs || !account.isAssociated
+                  ).length
+                }{' '}
+                found)
+              </span>
+            </h3>
+
+            {closedAccounts
+              .filter((account) => includeATAs || !account.isAssociated) // Filter ATAs based on checkbox
+              .map((account) => (
+                <label
+                  key={account.accountAddress}
+                  className='flex items-center space-x-3 p-4 rounded-lg border border-gray-700 bg-gray-800/30 hover:bg-gray-800/50 cursor-pointer transition-colors'
+                >
+                  <input
+                    type='checkbox'
+                    checked={selectedAccounts.has(account.accountAddress)}
+                    onChange={() =>
+                      handleAccountSelection(account.accountAddress)
+                    }
+                    className='w-4 h-4 text-[#58a6ff] bg-gray-700 border-gray-600 rounded focus:ring-[#58a6ff] focus:ring-2'
+                  />
+                  <div className='flex-1'>
+                    <div className='flex items-center justify-between'>
+                      <div>
+                        <p className='text-white font-medium'>
+                          {account.name} ({account.symbol})
+                        </p>
+                        <p className='text-sm text-gray-400'>
+                          {account.accountAddress}
+                        </p>
+                        {account.isAssociated && (
+                          <span className='inline-block px-2 py-1 text-xs bg-blue-900/30 text-blue-400 rounded mt-1'>
+                            ATA
+                          </span>
+                        )}
+                      </div>
+                      <div className='text-right'>
+                        <p className='text-[#7ee787] font-semibold'>
+                          {account.rentAmount.toFixed(6)} SOL
+                        </p>
+                        <p className='text-xs text-gray-400'>Rent</p>
+                      </div>
+                    </div>
+                  </div>
+                </label>
+              ))}
+          </div>
+        )}
+
+        {/* EMPTY STATE */}
+        {closedAccounts.length === 0 && !isScanning && (
+          <div className='text-center py-8 text-gray-500'>
+            <p>No closeable token accounts found with rent to reclaim.</p>
+            <p className='text-sm mt-2'>
+              Try scanning again or check if you have any empty token accounts.
+            </p>
+          </div>
+        )}
+
+        {/* SCANNING STATE */}
+        {isScanning && (
+          <div className='text-center py-8 text-gray-500'>
+            <div className='flex items-center justify-center space-x-2'>
+              <Loader2 className='w-5 h-5 animate-spin' />
+              <span>Scanning for closeable accounts...</span>
+            </div>
           </div>
         )}
       </div>
 
       {/* SUMMARY */}
-      {selectedAccounts.length > 0 && (
+      {selectedAccounts.size > 0 && (
         <div className='mt-8 p-6 rounded-xl border border-gray-700 bg-gray-800/50'>
           <h3 className='text-lg font-semibold mb-4 text-white flex items-center space-x-2'>
             <Shield className='w-5 h-5 text-[#7ee787]' />
@@ -732,7 +612,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             <div className='flex justify-between items-center py-2 border-b border-gray-600'>
               <span className='text-gray-400'>Accounts to Close:</span>
               <span className='text-[#58a6ff] font-semibold'>
-                {selectedAccounts.length}
+                {selectedAccounts.size}
               </span>
             </div>
             <div className='flex justify-between items-center py-2 border-b border-gray-600'>
@@ -745,7 +625,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
               <span className='text-gray-400'>Platform Fee:</span>
               <span className='text-white font-semibold'>
                 {(() => {
-                  const accountCount = selectedAccounts.length;
+                  const accountCount = selectedAccounts.size;
                   if (accountCount <= 5) {
                     return '0.0007 SOL';
                   } else {
@@ -768,7 +648,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                 </span>
                 <span className='text-[#7ee787] text-lg font-bold'>
                   {(() => {
-                    const accountCount = selectedAccounts.length;
+                    const accountCount = selectedAccounts.size;
                     let commissionAmount = 0.0007; // Base fee per wallet
                     if (accountCount > 5) {
                       const totalRent = getTotalSelectedRent();
@@ -789,57 +669,77 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         </div>
       )}
 
-      {/* STATUS MESSAGES */}
-      {claimStatus === 'success' && (
-        <div className='mt-6 p-4 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center space-x-3'>
-          <CheckCircle className='w-5 h-5 text-green-400' />
-          <span className='text-green-200'>
-            Rent claimed successfully! Your SOL has been returned to your
-            wallet.
-          </span>
+      {/* SUCCESS MESSAGE */}
+      {claimSuccess && (
+        <div className='mt-6 p-4 rounded-xl border border-green-700 bg-green-900/20'>
+          <div className='flex items-center space-x-2 text-green-400'>
+            <CheckCircle className='w-5 h-5' />
+            <span className='font-medium'>Success!</span>
+          </div>
+          <p className='mt-2 text-green-300'>{claimSuccess}</p>
         </div>
       )}
 
-      {claimStatus === 'error' && (
-        <div className='mt-6 p-4 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center space-x-3'>
-          <AlertCircle className='w-5 h-5 text-red-400' />
-          <span className='text-red-200'>{errorMessage}</span>
+      {/* ERROR MESSAGE */}
+      {claimError && (
+        <div className='mt-6 p-4 rounded-xl border border-red-700 bg-red-900/20'>
+          <div className='flex items-center space-x-2 text-red-400'>
+            <AlertCircle className='w-5 h-5' />
+            <span className='font-medium'>Error</span>
+          </div>
+          <p className='mt-2 text-red-300'>{claimError}</p>
         </div>
       )}
 
-      {errorMessage && !claimStatus && (
-        <div className='mt-6 p-4 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center space-x-3'>
-          <AlertCircle className='w-5 h-5 text-red-400' />
-          <span className='text-red-200'>{errorMessage}</span>
+      {/* GENERAL ERROR MESSAGE */}
+      {errorMessage && !claimSuccess && !claimError && (
+        <div className='mt-6 p-4 rounded-xl border border-red-700 bg-red-900/20'>
+          <div className='flex items-center space-x-2 text-red-400'>
+            <AlertCircle className='w-5 h-5' />
+            <span className='font-medium'>Scan Error</span>
+          </div>
+          <p className='mt-2 text-red-300'>{errorMessage}</p>
         </div>
       )}
 
       {/* CLAIM BUTTON */}
-      {selectedAccounts.length > 0 && (
+      {selectedAccounts.size > 0 && (
         <div className='mt-8'>
           <button
             onClick={handleClaimRent}
             disabled={
-              isLoading ||
-              selectedAccounts.length === 0 ||
-              claimStatus === 'success'
+              isClaiming || selectedAccounts.size === 0 || claimSuccess !== ''
             }
-            className='w-full flex items-center justify-center space-x-3 px-6 py-4 rounded-xl bg-gradient-to-r from-[#7ee787] to-green-500 text-gray-900 font-bold shadow-lg hover:opacity-90 disabled:opacity-50'
+            className='w-full bg-gradient-to-r from-[#58a6ff] to-[#7ee787] hover:from-[#4a9eff] hover:to-[#6dd877] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center space-x-2'
           >
-            {isLoading ? (
+            {isClaiming ? (
               <>
                 <Loader2 className='w-5 h-5 animate-spin' />
-                <span>Processing...</span>
+                <span>Claiming Rent...</span>
               </>
             ) : (
               <>
                 <Zap className='w-5 h-5' />
-                <span>
-                  Claim Rent ({getTotalSelectedRent().toFixed(4)} SOL)
-                </span>
+                <span>Claim {getTotalSelectedRent().toFixed(6)} SOL</span>
               </>
             )}
           </button>
+
+          {/* Success Message */}
+          {claimSuccess && (
+            <div className='mt-4 p-4 rounded-lg bg-green-900/20 border border-green-700 text-green-400 flex items-center space-x-2'>
+              <CheckCircle className='w-5 h-5' />
+              <span>{claimSuccess}</span>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {claimError && (
+            <div className='mt-4 p-4 rounded-lg bg-red-900/20 border border-red-700 text-red-400 flex items-center space-x-2'>
+              <AlertCircle className='w-5 h-5' />
+              <span>{claimError}</span>
+            </div>
+          )}
         </div>
       )}
 
