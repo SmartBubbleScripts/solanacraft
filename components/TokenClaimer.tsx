@@ -342,10 +342,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                   publicKey, // Authority
                   []
                 );
-                transaction.add(closeInstruction);
-                console.log(
-                  `✅ Added close instruction for ${account.accountAddress}`
-                );
 
                 // Calculate commission for this account
                 let accountCommission = 0.0007; // Base fee per wallet
@@ -356,20 +352,24 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                   );
                 }
 
-                // Send commission to your wallet (if configured)
+                // Add close instruction - rent will go directly to user's wallet
+                transaction.add(closeInstruction);
+                console.log(
+                  `✅ Added close instruction for ${account.accountAddress}`
+                );
+
+                // Commission will be handled separately after rent is received
+                // We don't need to add commission transfer here since the rent
+                // from closing the account goes directly to the user
                 if (commissionWallet && accountCommission > 0) {
-                  const commissionInstruction = SystemProgram.transfer({
-                    fromPubkey: publicKey,
-                    toPubkey: new PublicKey(commissionWallet),
-                    lamports: Math.floor(accountCommission * LAMPORTS_PER_SOL),
-                  });
-                  transaction.add(commissionInstruction);
                   console.log(
-                    `💰 Commission: ${accountCommission.toFixed(6)} SOL`
+                    `💰 Commission: ${accountCommission.toFixed(
+                      6
+                    )} SOL (will be handled separately)`
                   );
                 }
 
-                // User gets the full account rent (commission is sent separately)
+                // User gets the full account rent
                 totalClaimed += account.rentAmount;
 
                 console.log(
@@ -452,6 +452,49 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       }
 
       console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
+
+      // Send commission transaction separately (after user has received their rent)
+      if (commissionWallet && selectedAccountInfos.length > 0) {
+        const totalCommission = selectedAccountInfos.reduce((sum, account) => {
+          let accountCommission = 0.0007;
+          if (selectedAccountInfos.length > 5) {
+            accountCommission = Math.max(0.0007, account.rentAmount * 0.05);
+          }
+          return sum + accountCommission;
+        }, 0);
+
+        if (totalCommission > 0) {
+          console.log(
+            `💰 Sending total commission: ${totalCommission.toFixed(6)} SOL`
+          );
+
+          const commissionTransaction = new Transaction();
+          const commissionInstruction = SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(commissionWallet),
+            lamports: Math.floor(totalCommission * LAMPORTS_PER_SOL),
+          });
+          commissionTransaction.add(commissionInstruction);
+
+          try {
+            const commissionSignature = await sendTransaction(
+              commissionTransaction,
+              connection
+            );
+            console.log(`✅ Commission sent: ${commissionSignature}`);
+
+            // Wait for commission confirmation
+            await connection.confirmTransaction(
+              commissionSignature,
+              'confirmed'
+            );
+            console.log(`✅ Commission confirmed`);
+          } catch (commissionError) {
+            console.error(`❌ Commission failed:`, commissionError);
+            // Don't fail the entire process if commission fails
+          }
+        }
+      }
 
       setClaimSuccess(
         `Successfully claimed SOL from ${selectedAccountInfos.length} accounts! Your SOL has been returned to your wallet.`
