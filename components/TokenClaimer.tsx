@@ -306,7 +306,15 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       const commissionWallet =
         process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
 
-      // Process each account individually
+      // Process all accounts in a single transaction for better UX
+      console.log(
+        `📦 Batching ${selectedAccountInfos.length} accounts into single transaction...`
+      );
+
+      const transaction = new Transaction();
+      let validAccountsCount = 0;
+
+      // Add close instructions for all accounts
       for (
         let accountIndex = 0;
         accountIndex < selectedAccountInfos.length;
@@ -318,8 +326,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             selectedAccountInfos.length
           }: ${account.accountAddress}`
         );
-
-        const transaction = new Transaction();
 
         // Double-check that account is truly empty before closing
         const accountInfo = await connection.getAccountInfo(
@@ -336,18 +342,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
               if (amount === BigInt(0)) {
                 // Account is truly empty, safe to close
-                // Calculate commission for this account
-                let accountCommission = 0.0007; // Base fee per wallet
-                if (selectedAccountInfos.length > 5) {
-                  accountCommission = Math.max(
-                    0.0007,
-                    account.rentAmount * 0.05
-                  );
-                }
-
-                // Sol Incinerator approach: Just close the account
-                // The rent goes directly to the user's wallet
-                // Commission is handled differently (not from user's existing SOL)
                 const closeInstruction = createCloseAccountInstruction(
                   new PublicKey(account.accountAddress),
                   publicKey, // Destination for rent (user gets full rent)
@@ -360,60 +354,9 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                   `✅ Added close instruction for ${account.accountAddress}`
                 );
 
-                if (commissionWallet && accountCommission > 0) {
-                  console.log(
-                    `💰 Commission: ${accountCommission.toFixed(
-                      6
-                    )} SOL (will be handled separately)`
-                  );
-                }
-
                 // User gets the full account rent
                 totalClaimed += account.rentAmount;
-
-                // Send the transaction
-                const signature = await sendTransaction(
-                  transaction,
-                  connection
-                );
-                console.log(
-                  `✅ Account ${accountIndex + 1} processed: ${signature}`
-                );
-
-                // Wait for confirmation with longer timeout
-                try {
-                  const confirmation = await connection.confirmTransaction(
-                    signature,
-                    'confirmed'
-                  );
-                  if (confirmation.value.err) {
-                    console.error(
-                      `❌ Transaction error details:`,
-                      confirmation.value.err
-                    );
-                    throw new Error(
-                      `Transaction failed: ${JSON.stringify(
-                        confirmation.value.err
-                      )}`
-                    );
-                  }
-                  console.log(`✅ Account ${accountIndex + 1} confirmed`);
-                } catch (confirmError) {
-                  console.error(
-                    `❌ Account ${accountIndex + 1} confirmation failed:`,
-                    confirmError
-                  );
-                  throw new Error(
-                    `Account ${
-                      accountIndex + 1
-                    } failed to confirm: ${confirmError}`
-                  );
-                }
-
-                // Small delay between accounts to avoid rate limiting
-                if (accountIndex < selectedAccountInfos.length - 1) {
-                  await new Promise((resolve) => setTimeout(resolve, 2000));
-                }
+                validAccountsCount++;
               } else {
                 console.log(
                   `⚠️ SKIPPING ${account.accountAddress} - has ${amount} tokens (Error 6009 would occur)`
@@ -442,18 +385,47 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         }
       }
 
+      if (validAccountsCount === 0) {
+        throw new Error('No valid accounts to close');
+      }
+
+      console.log(
+        `🎯 Sending single transaction with ${validAccountsCount} close instructions...`
+      );
+
+      // Send the single transaction with all close instructions
+      const signature = await sendTransaction(transaction, connection);
+      console.log(`✅ Single transaction sent: ${signature}`);
+
+      // Wait for confirmation
+      try {
+        const confirmation = await connection.confirmTransaction(
+          signature,
+          'confirmed'
+        );
+        if (confirmation.value.err) {
+          console.error(
+            `❌ Transaction error details:`,
+            confirmation.value.err
+          );
+          throw new Error(
+            `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+          );
+        }
+        console.log(
+          `✅ All ${validAccountsCount} accounts closed successfully`
+        );
+      } catch (confirmError) {
+        console.error(`❌ Transaction confirmation failed:`, confirmError);
+        throw new Error(`Transaction failed to confirm: ${confirmError}`);
+      }
+
       console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
 
       // Commission is handled during the close process
       // No need for separate commission transaction like Sol Incinerator
-      if (commissionWallet && selectedAccountInfos.length > 0) {
-        const totalCommission = selectedAccountInfos.reduce((sum, account) => {
-          let accountCommission = 0.0007;
-          if (selectedAccountInfos.length > 5) {
-            accountCommission = Math.max(0.0007, account.rentAmount * 0.05);
-          }
-          return sum + accountCommission;
-        }, 0);
+      if (commissionWallet && validAccountsCount > 0) {
+        const totalCommission = validAccountsCount * 0.0007; // Base fee per account
 
         console.log(
           `💰 Total commission: ${totalCommission.toFixed(
