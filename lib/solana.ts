@@ -147,7 +147,7 @@ export function calculateCommission(accountCount: number): number {
   return accountCount * FIXED_COMMISSION_PER_ACCOUNT;
 }
 
-// Network configuration
+// Network configuration with production-ready RPC endpoints
 export const NETWORKS = {
   devnet: {
     name: 'Devnet',
@@ -161,7 +161,147 @@ export const NETWORKS = {
   },
   mainnet: {
     name: 'Mainnet',
-    rpcUrl: 'https://api.mainnet-beta.solana.com',
+    // Production RPC endpoints with fallbacks
+    rpcUrls: [
+      // Primary: Helius (free tier - 100M requests/month)
+      process.env.NEXT_PUBLIC_HELIUS_RPC_URL ||
+        'https://rpc.helius.xyz/?api-key=YOUR_API_KEY',
+      // Fallback 1: QuickNode (free tier - 3M requests/month)
+      process.env.NEXT_PUBLIC_QUICKNODE_RPC_URL ||
+        'https://your-endpoint.solana-mainnet.quiknode.pro/YOUR_API_KEY/',
+      // Fallback 2: Alchemy (free tier - 300M compute units/month)
+      process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL ||
+        'https://solana-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
+      // Last resort: Public RPC (not recommended for production)
+      'https://api.mainnet-beta.solana.com',
+    ],
     explorer: 'https://explorer.solana.com',
   },
 };
+
+// Production-ready connection manager
+export class ProductionConnectionManager {
+  private connections: Connection[] = [];
+  private currentIndex = 0;
+  private lastSwitchTime = 0;
+  private switchThreshold = 60000; // 1 minute
+
+  constructor(network: 'mainnet' | 'testnet' | 'devnet' = 'mainnet') {
+    const config = NETWORKS[network];
+
+    if (network === 'mainnet' && 'rpcUrls' in config) {
+      // Create connections for all RPC endpoints
+      config.rpcUrls.forEach((url) => {
+        if (url && !url.includes('YOUR_API_KEY')) {
+          this.connections.push(new Connection(url, 'confirmed'));
+        }
+      });
+    } else {
+      // Single RPC for devnet/testnet
+      this.connections.push(new Connection(config.rpcUrl, 'confirmed'));
+    }
+  }
+
+  getConnection(): Connection {
+    if (this.connections.length === 0) {
+      throw new Error('No RPC connections available');
+    }
+    return this.connections[this.currentIndex];
+  }
+
+  async switchConnection(): Promise<void> {
+    if (this.connections.length <= 1) return;
+
+    const now = Date.now();
+    if (now - this.lastSwitchTime < this.switchThreshold) return;
+
+    this.currentIndex = (this.currentIndex + 1) % this.connections.length;
+    this.lastSwitchTime = now;
+    console.log(`Switched to RPC endpoint ${this.currentIndex + 1}`);
+  }
+
+  async testConnections(): Promise<Connection[]> {
+    const workingConnections: Connection[] = [];
+
+    for (const connection of this.connections) {
+      try {
+        await connection.getLatestBlockhash();
+        workingConnections.push(connection);
+      } catch (error) {
+        console.warn('RPC endpoint failed:', error);
+      }
+    }
+
+    return workingConnections;
+  }
+}
+
+// Enhanced Solana service with production features
+export class ProductionSolanaService {
+  private connectionManager: ProductionConnectionManager;
+  private retryAttempts = 3;
+  private retryDelay = 1000; // 1 second
+
+  constructor(network: 'mainnet' | 'testnet' | 'devnet' = 'mainnet') {
+    this.connectionManager = new ProductionConnectionManager(network);
+  }
+
+  private async executeWithRetry<T>(
+    operation: (connection: Connection) => Promise<T>
+  ): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+      try {
+        const connection = this.connectionManager.getConnection();
+        return await operation(connection);
+      } catch (error) {
+        lastError = error as Error;
+        console.warn(`Attempt ${attempt} failed:`, error);
+
+        if (attempt < this.retryAttempts) {
+          await this.connectionManager.switchConnection();
+          await new Promise((resolve) =>
+            setTimeout(resolve, this.retryDelay * attempt)
+          );
+        }
+      }
+    }
+
+    throw lastError!;
+  }
+
+  async getBalance(walletAddress: PublicKey): Promise<number> {
+    return this.executeWithRetry(async (connection) => {
+      const balance = await connection.getBalance(walletAddress);
+      return balance / LAMPORTS_PER_SOL;
+    });
+  }
+
+  async getTokenAccountsByOwner(
+    owner: PublicKey,
+    programId: PublicKey = TOKEN_PROGRAM_ID
+  ) {
+    return this.executeWithRetry(async (connection) => {
+      return connection.getParsedTokenAccountsByOwner(owner, { programId });
+    });
+  }
+
+  async getAccountInfo(pubkey: PublicKey) {
+    return this.executeWithRetry(async (connection) => {
+      return connection.getAccountInfo(pubkey);
+    });
+  }
+
+  async getMinimumBalanceForRentExemption(dataLength: number): Promise<number> {
+    return this.executeWithRetry(async (connection) => {
+      return connection.getMinimumBalanceForRentExemption(dataLength);
+    });
+  }
+
+  async getProgramAccounts(programId: PublicKey, configOrCommitment?: any) {
+    return this.executeWithRetry(async (connection) => {
+      return connection.getProgramAccounts(programId, configOrCommitment);
+    });
+  }
+}
