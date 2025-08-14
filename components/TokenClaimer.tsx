@@ -409,7 +409,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       setClaimSuccess(
         `Successfully claimed ${totalClaimed.toFixed(6)} SOL from ${
           selectedAccountInfos.length
-        } accounts! Network and platform fees were automatically deducted from the claimable amount.`
+        } accounts! Your SOL has been returned to your wallet.`
       );
 
       // Update the UI
@@ -666,50 +666,17 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
               </span>
             </div>
 
-            <div className='flex justify-between'>
-              <span className='text-gray-400'>Network Fee:</span>
-              <span className='text-gray-400'>~0.00015 SOL</span>
-            </div>
-
-            <div className='flex justify-between'>
-              <span className='text-gray-400'>Platform Fee:</span>
-              <span className='text-gray-400'>
-                {(() => {
-                  const accountCount = selectedAccounts.size;
-                  if (accountCount <= 5) {
-                    return '0.0007 SOL';
-                  } else {
-                    const totalRent = getTotalSelectedRent();
-                    const additionalCommission = totalRent * 0.05;
-                    const totalFee = 0.0007 + additionalCommission;
-                    return `${totalFee.toFixed(6)} SOL`;
-                  }
-                })()}
-              </span>
-            </div>
-
             <div className='pt-3 border-t border-gray-600'>
               <div className='flex justify-between'>
                 <span className='text-white font-semibold'>
                   You'll Receive:
                 </span>
                 <span className='text-[#7ee787] text-lg font-bold'>
-                  {(() => {
-                    const totalRent = getTotalSelectedRent();
-                    const accountCount = selectedAccounts.size;
-                    let platformFee = 0.0007;
-                    if (accountCount > 5) {
-                      platformFee = Math.max(0.0007, totalRent * 0.05);
-                    }
-                    const networkFee = 0.00015;
-                    const totalFees = platformFee + networkFee;
-                    return (totalRent - totalFees).toFixed(6);
-                  })()}{' '}
-                  SOL
+                  {getTotalSelectedRent().toFixed(6)} SOL
                 </span>
               </div>
               <p className='text-xs text-gray-500 mt-1'>
-                After deducting network and platform fees
+                Full amount after network fees
               </p>
             </div>
           </div>
@@ -767,21 +734,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             ) : (
               <>
                 <Zap className='w-5 h-5' />
-                <span>
-                  Claim{' '}
-                  {(() => {
-                    const totalRent = getTotalSelectedRent();
-                    const accountCount = selectedAccounts.size;
-                    let platformFee = 0.0007;
-                    if (accountCount > 5) {
-                      platformFee = Math.max(0.0007, totalRent * 0.05);
-                    }
-                    const networkFee = 0.00015;
-                    const totalFees = platformFee + networkFee;
-                    return (totalRent - totalFees).toFixed(6);
-                  })()}{' '}
-                  SOL
-                </span>
+                <span>Claim {getTotalSelectedRent().toFixed(6)} SOL</span>
               </>
             )}
           </button>
