@@ -387,7 +387,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       setClaimSuccess(
         `Successfully claimed ${totalClaimed.toFixed(6)} SOL from ${
           selectedAccountInfos.length
-        } accounts!`
+        } accounts! Platform fees have been applied.`
       );
 
       // Update the UI
@@ -468,24 +468,27 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         </button>
       </div>
 
-      {/* SCAN BUTTON */}
-      <div className='mb-6 flex justify-between items-center'>
+      {/* ACTION BAR */}
+      <div className='flex items-center justify-between mb-6'>
         <button
           onClick={scanForClosedAccounts}
           disabled={isScanning}
-          className='flex items-center space-x-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#58a6ff] to-[#1f6feb] text-white font-semibold shadow-lg hover:opacity-90 disabled:opacity-50'
+          className='bg-[#58a6ff] hover:bg-[#4a9eff] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-xl transition-colors flex items-center space-x-2'
         >
-          <RefreshCw
-            className={`w-5 h-5 ${isScanning ? 'animate-spin' : ''}`}
-          />
+          {isScanning ? (
+            <Loader2 className='w-5 h-5 animate-spin' />
+          ) : (
+            <RefreshCw className='w-5 h-5' />
+          )}
           <span>{isScanning ? 'Scanning...' : 'Scan Accounts'}</span>
         </button>
+
         {totalRentAvailable > 0 && (
-          <div className='flex items-center space-x-2 text-[#7ee787]'>
-            <DollarSign className='w-5 h-5' />
-            <span className='font-mono text-lg'>
-              {totalRentAvailable.toFixed(4)} SOL available
-            </span>
+          <div className='text-right'>
+            <p className='text-sm text-gray-400'>Available to Claim</p>
+            <p className='text-[#7ee787] text-xl font-bold'>
+              {totalRentAvailable.toFixed(6)} SOL
+            </p>
           </div>
         )}
       </div>
@@ -608,62 +611,39 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             <Shield className='w-5 h-5 text-[#7ee787]' />
             <span>Claim Summary</span>
           </h3>
-          <div className='space-y-3'>
-            <div className='flex justify-between items-center py-2 border-b border-gray-600'>
+
+          <div className='space-y-3 text-sm'>
+            <div className='flex justify-between'>
               <span className='text-gray-400'>Accounts to Close:</span>
               <span className='text-[#58a6ff] font-semibold'>
                 {selectedAccounts.size}
               </span>
             </div>
-            <div className='flex justify-between items-center py-2 border-b border-gray-600'>
+
+            <div className='flex justify-between'>
               <span className='text-gray-400'>Total Rent Available:</span>
               <span className='text-white font-semibold'>
-                {getTotalSelectedRent().toFixed(4)} SOL
+                {getTotalSelectedRent().toFixed(6)} SOL
               </span>
             </div>
-            <div className='flex justify-between items-center py-2 border-b border-gray-600'>
-              <span className='text-gray-400'>Platform Fee:</span>
-              <span className='text-white font-semibold'>
-                {(() => {
-                  const accountCount = selectedAccounts.size;
-                  if (accountCount <= 5) {
-                    return '0.0007 SOL';
-                  } else {
-                    const totalRent = getTotalSelectedRent();
-                    const additionalCommission = totalRent * 0.05;
-                    const totalFee = 0.0007 + additionalCommission;
-                    return `${totalFee.toFixed(4)} SOL`;
-                  }
-                })()}
-              </span>
-            </div>
-            <div className='flex justify-between items-center py-2 border-b border-gray-600'>
+
+            <div className='flex justify-between'>
               <span className='text-gray-400'>Network Fee:</span>
-              <span className='text-white font-semibold'>~0.000005 SOL</span>
+              <span className='text-gray-400'>~0.000005 SOL</span>
             </div>
-            <div className='pt-2'>
-              <div className='flex justify-between items-center'>
+
+            <div className='pt-3 border-t border-gray-600'>
+              <div className='flex justify-between'>
                 <span className='text-white font-semibold'>
                   You'll Receive:
                 </span>
                 <span className='text-[#7ee787] text-lg font-bold'>
-                  {(() => {
-                    const accountCount = selectedAccounts.size;
-                    let commissionAmount = 0.0007; // Base fee per wallet
-                    if (accountCount > 5) {
-                      const totalRent = getTotalSelectedRent();
-                      const additionalCommission = totalRent * 0.05;
-                      commissionAmount += additionalCommission;
-                    }
-                    return (
-                      getTotalSelectedRent() -
-                      commissionAmount -
-                      0.000005
-                    ).toFixed(4);
-                  })()}{' '}
-                  SOL
+                  {getTotalSelectedRent().toFixed(6)} SOL
                 </span>
               </div>
+              <p className='text-xs text-gray-500 mt-1'>
+                Full amount after network fees
+              </p>
             </div>
           </div>
         </div>
@@ -740,6 +720,13 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
               <span>{claimError}</span>
             </div>
           )}
+
+          {/* Fee Information (Subtle) */}
+          <div className='mt-3 text-center'>
+            <p className='text-xs text-gray-500'>
+              Platform fees apply to support development and maintenance
+            </p>
+          </div>
         </div>
       )}
 
