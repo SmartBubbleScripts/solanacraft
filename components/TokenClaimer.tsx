@@ -59,6 +59,25 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
   const [includeATAs, setIncludeATAs] = useState(false); // New state for ATA handling
   const [totalRentAvailable, setTotalRentAvailable] = useState(0);
 
+  // Auto-select accounts based on ATA checkbox
+  useEffect(() => {
+    if (closedAccounts.length > 0) {
+      if (includeATAs) {
+        // Select all accounts (including ATAs)
+        const allAccountAddresses = closedAccounts.map(
+          (account) => account.accountAddress
+        );
+        setSelectedAccounts(new Set(allAccountAddresses));
+      } else {
+        // Select only non-ATA accounts
+        const nonATAAccounts = closedAccounts
+          .filter((account) => !account.isAssociated)
+          .map((account) => account.accountAddress);
+        setSelectedAccounts(new Set(nonATAAccounts));
+      }
+    }
+  }, [includeATAs, closedAccounts]);
+
   const scanForClosedAccounts = async () => {
     if (!publicKey || !connection) return;
     setIsScanning(true);
@@ -521,9 +540,26 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                 className='w-4 h-4 text-[#58a6ff] bg-gray-700 border-gray-600 rounded focus:ring-[#58a6ff] focus:ring-2'
               />
               <label htmlFor='includeATAs' className='text-sm text-gray-300'>
-                Include Associated Token Accounts (ATAs) - These will be
-                automatically recreated by wallets
+                Include Associated Token Accounts (ATAs) - Auto-selects all
+                accounts when checked
               </label>
+            </div>
+
+            {/* Selection Helper Text */}
+            <div className='text-center text-xs text-gray-500 mb-4'>
+              {selectedAccounts.size > 0 ? (
+                <span>
+                  {selectedAccounts.size} of {closedAccounts.length} accounts
+                  selected
+                  {!includeATAs &&
+                    closedAccounts.filter((acc) => acc.isAssociated).length >
+                      0 && (
+                      <span className='text-[#58a6ff]'> (ATAs excluded)</span>
+                    )}
+                </span>
+              ) : (
+                <span>No accounts selected</span>
+              )}
             </div>
 
             <h3 className='text-lg font-semibold text-white flex items-center space-x-2'>
