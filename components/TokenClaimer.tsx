@@ -8,6 +8,7 @@ import {
   PublicKey,
   Transaction,
   SystemProgram,
+  Connection,
 } from '@solana/web3.js';
 import {
   getAssociatedTokenAddress,
@@ -62,97 +63,267 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
     setErrorMessage('');
 
     try {
-      console.log('🔍 Starting diagnostic scan...');
+      console.log('🔍 Starting Sol Incinerator-style scan...');
       console.log('Wallet address:', publicKey.toString());
 
       const closedAccountsList: ClosedAccountInfo[] = [];
       let totalRent = 0;
 
-      // Step 1: Get ALL token accounts and log everything
-      console.log('📡 Step 1: Getting ALL token accounts...');
-      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+      // Try multiple RPC endpoints to avoid rate limiting
+      const rpcEndpoints = [
+        'https://api.mainnet-beta.solana.com',
+        'https://solana-api.projectserum.com',
+        'https://rpc.ankr.com/solana',
+        'https://solana.public-rpc.com',
+      ];
+
+      let allAccounts: any = [];
+      let rpcIndex = 0;
+
+      // Try to get accounts with different RPC endpoints
+      while (allAccounts.length === 0 && rpcIndex < rpcEndpoints.length) {
+        try {
+          console.log(
+            `📡 Trying RPC endpoint ${rpcIndex + 1}: ${rpcEndpoints[rpcIndex]}`
+          );
+
+          const tempConnection = new Connection(
+            rpcEndpoints[rpcIndex],
+            'confirmed'
+          );
+
+          // Simplified getProgramAccounts call to avoid 400 errors
+          allAccounts = await tempConnection.getProgramAccounts(
+            TOKEN_PROGRAM_ID,
+            {
+              filters: [
+                {
+                  dataSize: 165, // Standard token account size
+                },
+                {
+                  memcmp: {
+                    offset: 32, // Owner offset in token account
+                    bytes: publicKey.toBase58(),
+                  },
+                },
+              ],
+            }
+          );
+
+          console.log(
+            `✅ Success with RPC ${rpcIndex + 1}: Found ${
+              allAccounts.length
+            } accounts`
+          );
+
+          // If we got accounts, break out of the loop
+          if (allAccounts.length > 0) {
+            break;
+          }
+        } catch (error) {
+          console.log(`❌ RPC ${rpcIndex + 1} failed:`, error);
+          rpcIndex++;
+
+          if (rpcIndex >= rpcEndpoints.length) {
+            console.log('❌ All RPC endpoints failed');
+            setErrorMessage(
+              'All RPC endpoints failed. Please try again later.'
+            );
+            return;
+          }
+        }
+      }
+
+      // If still no accounts, try a simpler approach
+      if (allAccounts.length === 0) {
+        console.log(
+          '🔄 No accounts found with getProgramAccounts, trying simpler method...'
+        );
+
+        try {
+          // Try with just the owner filter
+          allAccounts = await connection.getProgramAccounts(TOKEN_PROGRAM_ID, {
+            filters: [
+              {
+                memcmp: {
+                  offset: 32,
+                  bytes: publicKey.toBase58(),
+                },
+              },
+            ],
+          });
+
+          console.log(`✅ Simple method found ${allAccounts.length} accounts`);
+        } catch (simpleError) {
+          console.log('❌ Simple method also failed:', simpleError);
+
+          // Last resort: just use parsed accounts
+          console.log('🔄 Falling back to parsed accounts only...');
+          allAccounts = [];
+        }
+      }
+
+      console.log(
+        `Found ${allAccounts.length} total accounts with getProgramAccounts`
+      );
+
+      // Method 2: Get parsed token accounts (what we were doing before)
+      console.log('📡 Method 2: Getting parsed token accounts...');
+      const parsedAccounts = await connection.getParsedTokenAccountsByOwner(
         publicKey,
         { programId: TOKEN_PROGRAM_ID }
       );
 
-      console.log(`Total token accounts found: ${tokenAccounts.value.length}`);
+      console.log(`Found ${parsedAccounts.value.length} parsed token accounts`);
 
-      if (tokenAccounts.value.length === 0) {
-        console.log('❌ No token accounts found at all!');
-        setErrorMessage(
-          'No token accounts found in your wallet. This means you have no SPL tokens.'
-        );
-        return;
+      // Method 3: Check each account from getProgramAccounts
+      console.log('📡 Method 3: Analyzing each account for closeability...');
+
+      for (let i = 0; i < allAccounts.length; i++) {
+        const account = allAccounts[i];
+        const pubkey = account.pubkey;
+
+        try {
+          console.log(`\n--- Account ${i + 1} ---`);
+          console.log(`Address: ${pubkey.toString()}`);
+
+          // Get raw account info
+          const accountInfo = await connection.getAccountInfo(pubkey);
+
+          if (!accountInfo) {
+            console.log(
+              `❌ Account doesn't exist - might be closed but with rent`
+            );
+
+            // Check if this could be a closed account with rent
+            const standardTokenAccountSize = 165;
+            const rentExemption =
+              await connection.getMinimumBalanceForRentExemption(
+                standardTokenAccountSize
+              );
+            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+
+            if (rentAmount > 0) {
+              closedAccountsList.push({
+                mint: 'Unknown',
+                symbol: 'CLOSED',
+                name: 'Closed Account',
+                accountAddress: pubkey.toString(),
+                rentAmount,
+                isAssociated: false,
+                canClose: true,
+              });
+
+              totalRent += rentAmount;
+              console.log(
+                `✅ ADDED CLOSED ACCOUNT: ${rentAmount.toFixed(4)} SOL rent`
+              );
+            }
+            continue;
+          }
+
+          if (accountInfo.data.length === 0) {
+            console.log(
+              `❌ Account exists but has no data - definitely closed`
+            );
+
+            const standardTokenAccountSize = 165;
+            const rentExemption =
+              await connection.getMinimumBalanceForRentExemption(
+                standardTokenAccountSize
+              );
+            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+
+            if (rentAmount > 0) {
+              closedAccountsList.push({
+                mint: 'Unknown',
+                symbol: 'CLOSED',
+                name: 'Closed Account',
+                accountAddress: pubkey.toString(),
+                rentAmount,
+                isAssociated: false,
+                canClose: true,
+              });
+
+              totalRent += rentAmount;
+              console.log(
+                `✅ ADDED CLOSED ACCOUNT: ${rentAmount.toFixed(4)} SOL rent`
+              );
+            }
+            continue;
+          }
+
+          // Try to parse the account data
+          try {
+            // This is what Sol Incinerator probably does - parse raw account data
+            const accountData = accountInfo.data;
+            console.log(`Account data length: ${accountData.length}`);
+
+            // Check if this is a token account by looking at the data structure
+            if (accountData.length >= 165) {
+              // This looks like a token account
+              console.log(`🔍 This looks like a token account`);
+
+              // Try to get token amount from raw data
+              // Token amount is at offset 64, 8 bytes
+              const amountBuffer = accountData.slice(64, 72);
+              const amount = amountBuffer.readBigUInt64LE(0);
+              console.log(`Raw amount from data: ${amount}`);
+
+              if (amount === BigInt(0)) {
+                console.log(`💰 EMPTY ACCOUNT FOUND IN RAW DATA!`);
+
+                const standardTokenAccountSize = 165;
+                const rentExemption =
+                  await connection.getMinimumBalanceForRentExemption(
+                    standardTokenAccountSize
+                  );
+                const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+
+                if (rentAmount > 0) {
+                  closedAccountsList.push({
+                    mint: 'Unknown',
+                    symbol: 'EMPTY',
+                    name: 'Empty Token Account',
+                    accountAddress: pubkey.toString(),
+                    rentAmount,
+                    isAssociated: false,
+                    canClose: true,
+                  });
+
+                  totalRent += rentAmount;
+                  console.log(
+                    `✅ ADDED EMPTY ACCOUNT: ${rentAmount.toFixed(4)} SOL rent`
+                  );
+                }
+              } else {
+                console.log(`📊 Account has ${amount} tokens (not empty)`);
+              }
+            }
+          } catch (parseError) {
+            console.log(`⚠️ Could not parse account data:`, parseError);
+          }
+        } catch (error) {
+          console.log(
+            `⚠️ Error processing account ${pubkey.toString()}:`,
+            error
+          );
+        }
       }
 
-      // Step 2: Log every single account for debugging
-      console.log('📡 Step 2: Analyzing each account...');
+      // Method 4: Also check parsed accounts for empty ones
+      console.log('📡 Method 4: Checking parsed accounts for empty ones...');
 
-      for (let i = 0; i < tokenAccounts.value.length; i++) {
-        const { account, pubkey } = tokenAccounts.value[i];
+      for (const { account, pubkey } of parsedAccounts.value) {
         const accountInfo = account.data.parsed.info;
         const tokenAmount = accountInfo.tokenAmount.uiAmount;
         const mint = accountInfo.mint;
-        const state = accountInfo.state;
 
-        console.log(`\n--- Account ${i + 1} ---`);
-        console.log(`Address: ${pubkey.toString()}`);
-        console.log(`Mint: ${mint}`);
-        console.log(`Token Amount: ${tokenAmount}`);
-        console.log(`State: ${state}`);
-        console.log(`Raw Amount: ${accountInfo.tokenAmount.amount}`);
-        console.log(`Decimals: ${accountInfo.tokenAmount.decimals}`);
-
-        // Check if this account can be closed
         if (tokenAmount === 0) {
-          console.log(`💰 EMPTY ACCOUNT FOUND!`);
-
-          const standardTokenAccountSize = 165;
-          const rentExemption =
-            await connection.getMinimumBalanceForRentExemption(
-              standardTokenAccountSize
-            );
-          const rentAmount = rentExemption / LAMPORTS_PER_SOL;
-
           console.log(
-            `Rent exemption: ${rentExemption} lamports (${rentAmount} SOL)`
+            `💰 Found empty account in parsed data: ${pubkey.toString()}`
           );
 
-          if (rentAmount > 0) {
-            const associatedTokenAddress = await getAssociatedTokenAddress(
-              new PublicKey(mint),
-              publicKey,
-              false,
-              TOKEN_PROGRAM_ID,
-              ASSOCIATED_TOKEN_PROGRAM_ID
-            );
-
-            const isAssociated = associatedTokenAddress.equals(pubkey);
-            const tokenInfo = await getTokenInfo(mint);
-
-            console.log(`Token Info: ${tokenInfo.symbol} - ${tokenInfo.name}`);
-            console.log(`Is Associated: ${isAssociated}`);
-
-            closedAccountsList.push({
-              mint,
-              symbol: tokenInfo.symbol,
-              name: tokenInfo.name,
-              accountAddress: pubkey.toString(),
-              rentAmount,
-              isAssociated,
-              canClose: true,
-            });
-
-            totalRent += rentAmount;
-            console.log(
-              `✅ ADDED TO CLOSEABLE LIST: ${
-                tokenInfo.symbol
-              } - ${rentAmount.toFixed(4)} SOL rent`
-            );
-          }
-        } else if (tokenAmount > 0 && tokenAmount < 0.000001) {
-          console.log(`💰 DUST ACCOUNT FOUND! Amount: ${tokenAmount}`);
-
           const standardTokenAccountSize = 165;
           const rentExemption =
             await connection.getMinimumBalanceForRentExemption(
@@ -172,10 +343,66 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             const isAssociated = associatedTokenAddress.equals(pubkey);
             const tokenInfo = await getTokenInfo(mint);
 
+            // Check if already added
             const existingAccount = closedAccountsList.find(
               (acc) => acc.accountAddress === pubkey.toString()
             );
             if (!existingAccount) {
+              closedAccountsList.push({
+                mint,
+                symbol: tokenInfo.symbol,
+                name: tokenInfo.name,
+                accountAddress: pubkey.toString(),
+                rentAmount,
+                isAssociated,
+                canClose: true,
+              });
+
+              totalRent += rentAmount;
+              console.log(
+                `✅ ADDED EMPTY ACCOUNT: ${
+                  tokenInfo.symbol
+                } - ${rentAmount.toFixed(4)} SOL rent`
+              );
+            }
+          }
+        }
+      }
+
+      // Method 5: Final fallback - just scan what we can see
+      if (closedAccountsList.length === 0 && parsedAccounts.value.length > 0) {
+        console.log('🔄 No closeable accounts found, doing final scan...');
+
+        for (const { account, pubkey } of parsedAccounts.value) {
+          const accountInfo = account.data.parsed.info;
+          const tokenAmount = accountInfo.tokenAmount.uiAmount;
+          const mint = accountInfo.mint;
+
+          console.log(`Account ${pubkey.toString()}: ${tokenAmount} tokens`);
+
+          // Check for dust amounts
+          if (tokenAmount > 0 && tokenAmount < 0.000001) {
+            console.log(`💰 Found dust account: ${tokenAmount} tokens`);
+
+            const standardTokenAccountSize = 165;
+            const rentExemption =
+              await connection.getMinimumBalanceForRentExemption(
+                standardTokenAccountSize
+              );
+            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+
+            if (rentAmount > 0) {
+              const associatedTokenAddress = await getAssociatedTokenAddress(
+                new PublicKey(mint),
+                publicKey,
+                false,
+                TOKEN_PROGRAM_ID,
+                ASSOCIATED_TOKEN_PROGRAM_ID
+              );
+
+              const isAssociated = associatedTokenAddress.equals(pubkey);
+              const tokenInfo = await getTokenInfo(mint);
+
               closedAccountsList.push({
                 mint,
                 symbol: tokenInfo.symbol,
@@ -194,22 +421,21 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
               );
             }
           }
-        } else {
-          console.log(`📊 Active account with balance: ${tokenAmount}`);
         }
       }
 
       console.log(`\n🎯 FINAL RESULTS:`);
-      console.log(`Total accounts scanned: ${tokenAccounts.value.length}`);
+      console.log(`Total accounts found: ${allAccounts.length}`);
+      console.log(`Parsed accounts: ${parsedAccounts.value.length}`);
       console.log(`Closeable accounts found: ${closedAccountsList.length}`);
       console.log(`Total rent available: ${totalRent.toFixed(4)} SOL`);
 
       if (closedAccountsList.length === 0) {
         console.log('❌ NO CLOSEABLE ACCOUNTS FOUND');
-        console.log('This means:');
-        console.log('1. All your token accounts have balances > 0');
-        console.log('2. No accounts are empty or have dust amounts');
-        console.log('3. You might not have any token accounts to close');
+        console.log('This means either:');
+        console.log('1. All accounts are active with balances');
+        console.log('2. Our scanning method is still wrong');
+        console.log('3. Sol Incinerator uses a different technique');
       }
 
       setClosedAccounts(closedAccountsList);
@@ -217,11 +443,11 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
       if (closedAccountsList.length === 0) {
         setErrorMessage(
-          `No closeable accounts found. Scanned ${tokenAccounts.value.length} token accounts. All accounts have balances > 0. Check console for detailed analysis.`
+          `No closeable accounts found. Scanned ${allAccounts.length} total accounts. Check console for detailed analysis.`
         );
       }
     } catch (error) {
-      console.error('❌ Error during diagnostic scan:', error);
+      console.error('❌ Error during Sol Incinerator-style scan:', error);
       setErrorMessage(
         `Scan failed: ${
           error instanceof Error ? error.message : 'Unknown error'
