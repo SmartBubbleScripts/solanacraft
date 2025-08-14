@@ -330,13 +330,44 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
         // Add close instructions for this batch
         for (const account of batch) {
-          const closeInstruction = createCloseAccountInstruction(
-            new PublicKey(account.accountAddress),
-            publicKey, // Destination for rent
-            publicKey, // Authority
-            []
+          // Double-check that account is truly empty before closing
+          const accountInfo = await connection.getAccountInfo(
+            new PublicKey(account.accountAddress)
           );
-          transaction.add(closeInstruction);
+          if (accountInfo) {
+            // Check if this is a token account and get raw token amount
+            try {
+              const accountData = accountInfo.data;
+              if (accountData.length >= 165) {
+                // Token amount is at offset 64, 8 bytes
+                const amountBuffer = accountData.slice(64, 72);
+                const amount = amountBuffer.readBigUInt64LE(0);
+
+                if (amount === BigInt(0)) {
+                  // Account is truly empty, safe to close
+                  const closeInstruction = createCloseAccountInstruction(
+                    new PublicKey(account.accountAddress),
+                    publicKey, // Destination for rent
+                    publicKey, // Authority
+                    []
+                  );
+                  transaction.add(closeInstruction);
+                  console.log(
+                    `✅ Added close instruction for ${account.accountAddress}`
+                  );
+                } else {
+                  console.log(
+                    `⚠️ Skipping ${account.accountAddress} - has ${amount} tokens`
+                  );
+                }
+              }
+            } catch (parseError) {
+              console.log(
+                `⚠️ Could not parse account data for ${account.accountAddress}:`,
+                parseError
+              );
+            }
+          }
         }
 
         // Calculate total rent for this batch
