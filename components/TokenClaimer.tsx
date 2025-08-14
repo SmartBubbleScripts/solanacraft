@@ -389,8 +389,30 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         throw new Error('No valid accounts to close');
       }
 
+      // Calculate total commission before sending transaction
+      let totalCommission = 0;
+      if (commissionWallet && validAccountsCount > 0) {
+        totalCommission = validAccountsCount * 0.0007; // Base fee per account
+
+        // Add commission transfer instruction to the same transaction
+        const commissionInstruction = SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: new PublicKey(commissionWallet),
+          lamports: Math.floor(totalCommission * LAMPORTS_PER_SOL),
+        });
+        transaction.add(commissionInstruction);
+
+        console.log(
+          `💰 Added commission transfer: ${totalCommission.toFixed(
+            6
+          )} SOL to ${commissionWallet}`
+        );
+      }
+
       console.log(
-        `🎯 Sending single transaction with ${validAccountsCount} close instructions...`
+        `🎯 Sending single transaction with ${validAccountsCount} close instructions${
+          totalCommission > 0 ? ' + commission' : ''
+        }...`
       );
 
       // Send the single transaction with all close instructions
@@ -421,18 +443,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       }
 
       console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
-
-      // Commission is handled during the close process
-      // No need for separate commission transaction like Sol Incinerator
-      if (commissionWallet && validAccountsCount > 0) {
-        const totalCommission = validAccountsCount * 0.0007; // Base fee per account
-
-        console.log(
-          `💰 Total commission: ${totalCommission.toFixed(
-            6
-          )} SOL (handled during close)`
-        );
-      }
 
       setClaimSuccess(
         `Successfully claimed SOL from ${selectedAccountInfos.length} accounts! Your SOL has been returned to your wallet.`
@@ -618,16 +628,23 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                     onChange={() =>
                       handleAccountSelection(account.accountAddress)
                     }
-                    className='w-4 h-4 text-[#58a6ff] bg-gray-700 border-gray-600 rounded focus:ring-[#58a6ff] focus:ring-2'
+                    className='w-4 h-4 text-[#58a6ff] bg-gray-700 border-gray-600 rounded focus:ring-[#58a6ff] focus:ring-2 flex-shrink-0'
                   />
-                  <div className='flex-1'>
-                    <div className='flex items-center justify-between'>
-                      <div>
-                        <p className='text-white font-medium'>
+                  <div className='flex-1 min-w-0'>
+                    <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0'>
+                      <div className='min-w-0'>
+                        <p className='text-white font-medium truncate'>
                           {account.name} ({account.symbol})
                         </p>
-                        <p className='text-sm text-gray-400'>
-                          {account.accountAddress}
+                        <p className='text-sm text-gray-400 break-all'>
+                          {account.accountAddress.length > 20
+                            ? `${account.accountAddress.substring(
+                                0,
+                                5
+                              )}...${account.accountAddress.substring(
+                                account.accountAddress.length - 5
+                              )}`
+                            : account.accountAddress}
                         </p>
                         {account.isAssociated && (
                           <span className='inline-block px-2 py-1 text-xs bg-blue-900/30 text-blue-400 rounded mt-1'>
@@ -635,7 +652,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                           </span>
                         )}
                       </div>
-                      <div className='text-right'>
+                      <div className='text-right flex-shrink-0'>
                         <p className='text-[#7ee787] font-semibold'>
                           {account.rentAmount.toFixed(6)} SOL
                         </p>
@@ -655,33 +672,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             <p className='text-sm mt-2'>
               Try scanning again or check if you have any empty token accounts.
             </p>
-          </div>
-        )}
-
-        {/* NON-CLOSEABLE ACCOUNTS INFO */}
-        {closedAccounts.length > 0 && (
-          <div className='mt-6 p-4 rounded-lg border border-yellow-700 bg-yellow-900/20'>
-            <h3 className='text-lg font-semibold text-yellow-400 flex items-center space-x-2 mb-3'>
-              <AlertCircle className='w-5 h-5' />
-              <span>Account Status</span>
-            </h3>
-            <div className='text-sm text-yellow-300'>
-              <p>
-                ✅ <strong>{closedAccounts.length} accounts</strong> can be
-                closed for rent reclamation
-              </p>
-              <p>❌ Some accounts may not be closeable due to:</p>
-              <ul className='list-disc list-inside mt-2 ml-4 space-y-1 text-yellow-200'>
-                <li>Still containing tokens</li>
-                <li>Being frozen or deactivated</li>
-                <li>Being native SOL accounts</li>
-                <li>Invalid account structure</li>
-              </ul>
-              <p className='mt-2 text-xs text-yellow-400'>
-                Only truly empty token accounts can be closed. Check console
-                logs for detailed analysis of each account.
-              </p>
-            </div>
           </div>
         )}
 
