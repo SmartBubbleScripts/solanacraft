@@ -339,20 +339,63 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           transaction.add(closeInstruction);
         }
 
-        // Send the close transaction
-        const signature = await sendTransaction(transaction, connection);
-        console.log(`✅ Batch ${batchIndex + 1} closed: ${signature}`);
-
-        // Wait for confirmation
-        await connection.confirmTransaction(signature, 'confirmed');
-        console.log(`✅ Batch ${batchIndex + 1} confirmed`);
-
-        // Calculate rent for this batch
+        // Calculate fees for this batch
         const batchRent = batch.reduce(
           (sum, account) => sum + account.rentAmount,
           0
         );
-        totalClaimed += batchRent;
+
+        // Estimate network fee for this transaction
+        const estimatedNetworkFee = 0.00015; // Conservative estimate
+
+        // Calculate commission for this batch
+        let batchCommission = 0.0007; // Base fee per wallet
+        if (batch.length > 5) {
+          batchCommission = Math.max(0.0007, batchRent * 0.05);
+        }
+
+        // Total fees for this batch
+        const totalBatchFees = estimatedNetworkFee + batchCommission;
+
+        // If batch rent can cover fees, deduct them
+        if (batchRent >= totalBatchFees) {
+          // Send commission to your wallet
+          if (commissionWallet && batchCommission > 0) {
+            const commissionInstruction = SystemProgram.transfer({
+              fromPubkey: publicKey,
+              toPubkey: new PublicKey(commissionWallet),
+              lamports: Math.floor(batchCommission * LAMPORTS_PER_SOL),
+            });
+            transaction.add(commissionInstruction);
+          }
+
+          // User gets: batchRent - totalBatchFees
+          const userReceives = batchRent - totalBatchFees;
+          totalClaimed += userReceives;
+
+          console.log(
+            `💰 Batch ${batchIndex + 1}: Rent ${batchRent.toFixed(
+              6
+            )} SOL, Fees ${totalBatchFees.toFixed(
+              6
+            )} SOL, User gets ${userReceives.toFixed(6)} SOL`
+          );
+        } else {
+          // If batch can't cover fees, user gets nothing from this batch
+          console.log(
+            `⚠️ Batch ${batchIndex + 1}: Rent ${batchRent.toFixed(
+              6
+            )} SOL too low to cover fees ${totalBatchFees.toFixed(6)} SOL`
+          );
+        }
+
+        // Send the transaction
+        const signature = await sendTransaction(transaction, connection);
+        console.log(`✅ Batch ${batchIndex + 1} processed: ${signature}`);
+
+        // Wait for confirmation
+        await connection.confirmTransaction(signature, 'confirmed');
+        console.log(`✅ Batch ${batchIndex + 1} confirmed`);
 
         // Small delay between batches to avoid rate limiting
         if (batchIndex < batches.length - 1) {
@@ -360,53 +403,13 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         }
       }
 
-      // Send commission in a separate transaction (if any)
-      if (commissionWallet) {
-        try {
-          const accountCount = selectedAccountInfos.length;
-          let commissionAmount = 0.0007; // Base fee per wallet
-
-          if (accountCount > 5) {
-            // 5% of total claimed amount for large claims
-            commissionAmount = Math.max(0.0007, totalClaimed * 0.05);
-          }
-
-          if (commissionAmount > 0) {
-            console.log(
-              `💰 Sending commission: ${commissionAmount.toFixed(6)} SOL`
-            );
-
-            const commissionTransaction = new Transaction().add(
-              SystemProgram.transfer({
-                fromPubkey: publicKey,
-                toPubkey: new PublicKey(commissionWallet),
-                lamports: Math.floor(commissionAmount * LAMPORTS_PER_SOL),
-              })
-            );
-
-            const commissionSignature = await sendTransaction(
-              commissionTransaction,
-              connection
-            );
-            await connection.confirmTransaction(
-              commissionSignature,
-              'confirmed'
-            );
-            console.log(`✅ Commission sent: ${commissionSignature}`);
-          }
-        } catch (commissionError) {
-          console.warn(
-            '⚠️ Commission failed, but claim succeeded:',
-            commissionError
-          );
-          // Don't fail the entire claim if commission fails
-        }
-      }
+      // Remove the separate commission transaction since we're handling it per batch
+      console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
 
       setClaimSuccess(
         `Successfully claimed ${totalClaimed.toFixed(6)} SOL from ${
           selectedAccountInfos.length
-        } accounts! Platform fees have been applied.`
+        } accounts! Network and platform fees were automatically deducted from the claimable amount.`
       );
 
       // Update the UI
@@ -665,7 +668,24 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
             <div className='flex justify-between'>
               <span className='text-gray-400'>Network Fee:</span>
-              <span className='text-gray-400'>~0.000005 SOL</span>
+              <span className='text-gray-400'>~0.00015 SOL</span>
+            </div>
+
+            <div className='flex justify-between'>
+              <span className='text-gray-400'>Platform Fee:</span>
+              <span className='text-gray-400'>
+                {(() => {
+                  const accountCount = selectedAccounts.size;
+                  if (accountCount <= 5) {
+                    return '0.0007 SOL';
+                  } else {
+                    const totalRent = getTotalSelectedRent();
+                    const additionalCommission = totalRent * 0.05;
+                    const totalFee = 0.0007 + additionalCommission;
+                    return `${totalFee.toFixed(6)} SOL`;
+                  }
+                })()}
+              </span>
             </div>
 
             <div className='pt-3 border-t border-gray-600'>
@@ -674,11 +694,22 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                   You'll Receive:
                 </span>
                 <span className='text-[#7ee787] text-lg font-bold'>
-                  {getTotalSelectedRent().toFixed(6)} SOL
+                  {(() => {
+                    const totalRent = getTotalSelectedRent();
+                    const accountCount = selectedAccounts.size;
+                    let platformFee = 0.0007;
+                    if (accountCount > 5) {
+                      platformFee = Math.max(0.0007, totalRent * 0.05);
+                    }
+                    const networkFee = 0.00015;
+                    const totalFees = platformFee + networkFee;
+                    return (totalRent - totalFees).toFixed(6);
+                  })()}{' '}
+                  SOL
                 </span>
               </div>
               <p className='text-xs text-gray-500 mt-1'>
-                Full amount after network fees
+                After deducting network and platform fees
               </p>
             </div>
           </div>
@@ -736,7 +767,21 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
             ) : (
               <>
                 <Zap className='w-5 h-5' />
-                <span>Claim {getTotalSelectedRent().toFixed(6)} SOL</span>
+                <span>
+                  Claim{' '}
+                  {(() => {
+                    const totalRent = getTotalSelectedRent();
+                    const accountCount = selectedAccounts.size;
+                    let platformFee = 0.0007;
+                    if (accountCount > 5) {
+                      platformFee = Math.max(0.0007, totalRent * 0.05);
+                    }
+                    const networkFee = 0.00015;
+                    const totalFees = platformFee + networkFee;
+                    return (totalRent - totalFees).toFixed(6);
+                  })()}{' '}
+                  SOL
+                </span>
               </>
             )}
           </button>
