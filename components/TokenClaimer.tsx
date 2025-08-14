@@ -304,138 +304,144 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         `🚀 Starting claim for ${selectedAccountInfos.length} accounts...`
       );
 
-      // Batch accounts into chunks of 3 to avoid transaction size limits
-      const batchSize = 3;
-      const batches = [];
-      for (let i = 0; i < selectedAccountInfos.length; i += batchSize) {
-        batches.push(selectedAccountInfos.slice(i, i + batchSize));
-      }
-
-      console.log(`📦 Processing ${batches.length} batches...`);
+      // Process accounts one by one for maximum reliability
+      console.log(
+        `📦 Processing ${selectedAccountInfos.length} accounts individually...`
+      );
 
       let totalClaimed = 0;
       const commissionWallet =
         process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
 
-      // Process each batch separately
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
+      // Process each account individually
+      for (
+        let accountIndex = 0;
+        accountIndex < selectedAccountInfos.length;
+        accountIndex++
+      ) {
+        const account = selectedAccountInfos[accountIndex];
         console.log(
-          `📦 Processing batch ${batchIndex + 1}/${batches.length} with ${
-            batch.length
-          } accounts`
+          `📦 Processing account ${accountIndex + 1}/${
+            selectedAccountInfos.length
+          }: ${account.accountAddress}`
         );
 
         const transaction = new Transaction();
 
-        // Add close instructions for this batch
-        for (const account of batch) {
-          // Double-check that account is truly empty before closing
-          const accountInfo = await connection.getAccountInfo(
-            new PublicKey(account.accountAddress)
-          );
-          if (accountInfo) {
-            // Check if this is a token account and get raw token amount
-            try {
-              const accountData = accountInfo.data;
-              if (accountData.length >= 165) {
-                // Token amount is at offset 64, 8 bytes
-                const amountBuffer = accountData.slice(64, 72);
-                const amount = amountBuffer.readBigUInt64LE(0);
+        // Double-check that account is truly empty before closing
+        const accountInfo = await connection.getAccountInfo(
+          new PublicKey(account.accountAddress)
+        );
+        if (accountInfo) {
+          // Check if this is a token account and get raw token amount
+          try {
+            const accountData = accountInfo.data;
+            if (accountData.length >= 165) {
+              // Token amount is at offset 64, 8 bytes
+              const amountBuffer = accountData.slice(64, 72);
+              const amount = amountBuffer.readBigUInt64LE(0);
 
-                if (amount === BigInt(0)) {
-                  // Account is truly empty, safe to close
-                  const closeInstruction = createCloseAccountInstruction(
-                    new PublicKey(account.accountAddress),
-                    publicKey, // Destination for rent
-                    publicKey, // Authority
-                    []
-                  );
-                  transaction.add(closeInstruction);
-                  console.log(
-                    `✅ Added close instruction for ${account.accountAddress}`
-                  );
-                } else {
-                  console.log(
-                    `⚠️ Skipping ${account.accountAddress} - has ${amount} tokens`
+              if (amount === BigInt(0)) {
+                // Account is truly empty, safe to close
+                const closeInstruction = createCloseAccountInstruction(
+                  new PublicKey(account.accountAddress),
+                  publicKey, // Destination for rent
+                  publicKey, // Authority
+                  []
+                );
+                transaction.add(closeInstruction);
+                console.log(
+                  `✅ Added close instruction for ${account.accountAddress}`
+                );
+
+                // Calculate commission for this account
+                let accountCommission = 0.0007; // Base fee per wallet
+                if (selectedAccountInfos.length > 5) {
+                  accountCommission = Math.max(
+                    0.0007,
+                    account.rentAmount * 0.05
                   );
                 }
+
+                // Send commission to your wallet (if configured)
+                if (commissionWallet && accountCommission > 0) {
+                  const commissionInstruction = SystemProgram.transfer({
+                    fromPubkey: publicKey,
+                    toPubkey: new PublicKey(commissionWallet),
+                    lamports: Math.floor(accountCommission * LAMPORTS_PER_SOL),
+                  });
+                  transaction.add(commissionInstruction);
+                  console.log(
+                    `💰 Commission: ${accountCommission.toFixed(6)} SOL`
+                  );
+                }
+
+                // User gets the full account rent (commission is sent separately)
+                totalClaimed += account.rentAmount;
+
+                console.log(
+                  `💰 Account ${
+                    accountIndex + 1
+                  }: Rent ${account.rentAmount.toFixed(
+                    6
+                  )} SOL, Commission ${accountCommission.toFixed(6)} SOL`
+                );
+
+                // Send the transaction
+                const signature = await sendTransaction(
+                  transaction,
+                  connection
+                );
+                console.log(
+                  `✅ Account ${accountIndex + 1} processed: ${signature}`
+                );
+
+                // Wait for confirmation with longer timeout
+                try {
+                  const confirmation = await connection.confirmTransaction(
+                    signature,
+                    'confirmed'
+                  );
+                  if (confirmation.value.err) {
+                    console.error(
+                      `❌ Transaction error details:`,
+                      confirmation.value.err
+                    );
+                    throw new Error(
+                      `Transaction failed: ${JSON.stringify(
+                        confirmation.value.err
+                      )}`
+                    );
+                  }
+                  console.log(`✅ Account ${accountIndex + 1} confirmed`);
+                } catch (confirmError) {
+                  console.error(
+                    `❌ Account ${accountIndex + 1} confirmation failed:`,
+                    confirmError
+                  );
+                  throw new Error(
+                    `Account ${
+                      accountIndex + 1
+                    } failed to confirm: ${confirmError}`
+                  );
+                }
+
+                // Small delay between accounts to avoid rate limiting
+                if (accountIndex < selectedAccountInfos.length - 1) {
+                  await new Promise((resolve) => setTimeout(resolve, 2000));
+                }
+              } else {
+                console.log(
+                  `⚠️ Skipping ${account.accountAddress} - has ${amount} tokens`
+                );
               }
-            } catch (parseError) {
-              console.log(
-                `⚠️ Could not parse account data for ${account.accountAddress}:`,
-                parseError
-              );
             }
-          }
-        }
-
-        // Calculate total rent for this batch
-        const batchRent = batch.reduce(
-          (sum, account) => sum + account.rentAmount,
-          0
-        );
-
-        // Calculate commission for this batch
-        let batchCommission = 0.0007; // Base fee per wallet
-        if (batch.length > 5) {
-          batchCommission = Math.max(0.0007, batchRent * 0.05);
-        }
-
-        // Send commission to your wallet (if configured)
-        if (commissionWallet && batchCommission > 0) {
-          const commissionInstruction = SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: new PublicKey(commissionWallet),
-            lamports: Math.floor(batchCommission * LAMPORTS_PER_SOL),
-          });
-          transaction.add(commissionInstruction);
-
-          console.log(`💰 Commission: ${batchCommission.toFixed(6)} SOL`);
-        }
-
-        // User gets the full batch rent (commission is sent separately)
-        totalClaimed += batchRent;
-
-        console.log(
-          `💰 Batch ${batchIndex + 1}: Rent ${batchRent.toFixed(
-            6
-          )} SOL, Commission ${batchCommission.toFixed(6)} SOL`
-        );
-
-        // Send the transaction
-        const signature = await sendTransaction(transaction, connection);
-        console.log(`✅ Batch ${batchIndex + 1} processed: ${signature}`);
-
-        // Wait for confirmation with longer timeout
-        try {
-          const confirmation = await connection.confirmTransaction(
-            signature,
-            'confirmed'
-          );
-          if (confirmation.value.err) {
-            console.error(
-              `❌ Transaction error details:`,
-              confirmation.value.err
-            );
-            throw new Error(
-              `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
+          } catch (parseError) {
+            console.log(
+              `⚠️ Could not parse account data for ${account.accountAddress}:`,
+              parseError
             );
           }
-          console.log(`✅ Batch ${batchIndex + 1} confirmed`);
-        } catch (confirmError) {
-          console.error(
-            `❌ Batch ${batchIndex + 1} confirmation failed:`,
-            confirmError
-          );
-          throw new Error(
-            `Batch ${batchIndex + 1} failed to confirm: ${confirmError}`
-          );
-        }
-
-        // Small delay between batches to avoid rate limiting
-        if (batchIndex < batches.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
 
