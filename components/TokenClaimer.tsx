@@ -389,16 +389,40 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         throw new Error('No valid accounts to close');
       }
 
-      // Commission is handled differently - not from user's existing SOL
-      // This prevents signature verification failures
+      // Commission handling - split the rent from closed accounts
       let totalCommission = 0;
       if (commissionWallet && validAccountsCount > 0) {
         totalCommission = validAccountsCount * 0.0007; // Base fee per account
         console.log(
-          `💰 Commission calculated: ${totalCommission.toFixed(
-            6
-          )} SOL (will be handled separately)`
+          `💰 Commission calculated: ${totalCommission.toFixed(6)} SOL`
         );
+
+        // Transfer commission to your wallet
+        const commissionTransferInstruction = SystemProgram.transfer({
+          fromPubkey: publicKey, // From user's wallet
+          toPubkey: new PublicKey(commissionWallet), // To your commission wallet
+          lamports: totalCommission * LAMPORTS_PER_SOL, // Convert to lamports
+        });
+
+        transaction.add(commissionTransferInstruction);
+        console.log(
+          `✅ Added commission transfer: ${totalCommission.toFixed(6)} SOL`
+        );
+      }
+
+      // Check if user has enough SOL to pay commission
+      if (totalCommission > 0) {
+        const userBalance = await connection.getBalance(publicKey);
+        const totalCost =
+          totalCommission + transaction.instructions.length * 0.000005; // Commission + fees
+
+        if (userBalance < totalCost * LAMPORTS_PER_SOL) {
+          throw new Error(
+            `Insufficient SOL. Need ${totalCost.toFixed(6)} SOL, have ${(
+              userBalance / LAMPORTS_PER_SOL
+            ).toFixed(6)} SOL`
+          );
+        }
       }
 
       console.log(
@@ -437,10 +461,19 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         throw new Error(`Transaction failed to confirm: ${confirmError}`);
       }
 
-      console.log(`🎯 Total claimed by user: ${totalClaimed.toFixed(6)} SOL`);
+      const userNetAmount = totalClaimed - totalCommission;
+      console.log(
+        `🎯 Total claimed by user: ${userNetAmount.toFixed(
+          6
+        )} SOL (after ${totalCommission.toFixed(6)} SOL commission)`
+      );
 
       setClaimSuccess(
-        `Successfully claimed SOL from ${selectedAccountInfos.length} accounts! Your SOL has been returned to your wallet.`
+        `Successfully claimed ${userNetAmount.toFixed(6)} SOL from ${
+          selectedAccountInfos.length
+        } accounts! Commission of ${totalCommission.toFixed(
+          6
+        )} SOL has been deducted.`
       );
 
       // Update the UI
