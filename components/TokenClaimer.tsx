@@ -303,8 +303,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       );
 
       let totalClaimed = 0;
-      const commissionWallet =
-        process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
 
       // Process all accounts in a single transaction for better UX
       console.log(
@@ -327,7 +325,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           }: ${account.accountAddress}`
         );
 
-        // Double-check that account is truly empty before closing
+        // Double-check that account is truly empty AND user has authority
         const accountInfo = await connection.getAccountInfo(
           new PublicKey(account.accountAddress)
         );
@@ -336,16 +334,33 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           try {
             const accountData = accountInfo.data;
             if (accountData.length >= 165) {
-              // Token amount is at offset 64, 8 bytes
+              // FIRST: Check if user is the owner of this token account
+              const ownerOffset = 32; // Owner is at offset 32 in token account data
+              const ownerBuffer = accountData.slice(
+                ownerOffset,
+                ownerOffset + 32
+              );
+              const ownerPublicKey = new PublicKey(ownerBuffer);
+
+              if (!ownerPublicKey.equals(publicKey)) {
+                console.log(
+                  `⚠️ SKIPPING ${
+                    account.accountAddress
+                  } - user doesn't own this account (owner: ${ownerPublicKey.toBase58()})`
+                );
+                continue; // Skip accounts you don't own
+              }
+
+              // THEN: Check if account is empty
               const amountBuffer = accountData.slice(64, 72);
               const amount = amountBuffer.readBigUInt64LE(0);
 
               if (amount === BigInt(0)) {
-                // Account is truly empty, safe to close
+                // Account is truly empty AND user owns it, safe to close
                 const closeInstruction = createCloseAccountInstruction(
                   new PublicKey(account.accountAddress),
                   publicKey, // Destination for rent (user gets full rent)
-                  publicKey, // Authority
+                  publicKey, // Authority (now verified to match owner)
                   []
                 );
                 transaction.add(closeInstruction);
@@ -389,10 +404,36 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         throw new Error('No valid accounts to close');
       }
 
-      // Commission handling - split the rent from closed accounts
+      // Check if user has enough SOL to pay commission BEFORE processing
+      const commissionWallet =
+        process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
       let totalCommission = 0;
       if (commissionWallet && validAccountsCount > 0) {
         totalCommission = validAccountsCount * 0.0007; // Base fee per account
+
+        const userBalance = await connection.getBalance(publicKey);
+        const estimatedFees = transaction.instructions.length * 0.000005; // Estimated transaction fees
+        const totalCost = totalCommission + estimatedFees;
+
+        if (userBalance < totalCost * LAMPORTS_PER_SOL) {
+          throw new Error(
+            `Insufficient SOL. Need ${totalCost.toFixed(
+              6
+            )} SOL (commission: ${totalCommission.toFixed(
+              6
+            )} SOL + fees: ${estimatedFees.toFixed(6)} SOL), have ${(
+              userBalance / LAMPORTS_PER_SOL
+            ).toFixed(6)} SOL`
+          );
+        }
+
+        console.log(
+          `💰 Commission check passed: ${totalCommission.toFixed(6)} SOL`
+        );
+      }
+
+      // Commission handling - transfer commission to your wallet
+      if (commissionWallet && validAccountsCount > 0) {
         console.log(
           `💰 Commission calculated: ${totalCommission.toFixed(6)} SOL`
         );
@@ -410,21 +451,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         );
       }
 
-      // Check if user has enough SOL to pay commission
-      if (totalCommission > 0) {
-        const userBalance = await connection.getBalance(publicKey);
-        const totalCost =
-          totalCommission + transaction.instructions.length * 0.000005; // Commission + fees
-
-        if (userBalance < totalCost * LAMPORTS_PER_SOL) {
-          throw new Error(
-            `Insufficient SOL. Need ${totalCost.toFixed(6)} SOL, have ${(
-              userBalance / LAMPORTS_PER_SOL
-            ).toFixed(6)} SOL`
-          );
-        }
-      }
-
       console.log(
         `🎯 Sending single transaction with ${validAccountsCount} close instructions...`
       );
@@ -434,9 +460,26 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
 
+      // Validate transaction before sending
+      console.log(`🔍 Transaction validation:`);
+      console.log(`- Instructions: ${transaction.instructions.length}`);
+      console.log(`- Fee payer: ${transaction.feePayer?.toBase58()}`);
+      console.log(`- Recent blockhash: ${transaction.recentBlockhash}`);
+
       // Send the single transaction with all close instructions
-      const signature = await sendTransaction(transaction, connection);
-      console.log(`✅ Single transaction sent: ${signature}`);
+      let signature: string;
+      try {
+        signature = await sendTransaction(transaction, connection);
+        console.log(`✅ Single transaction sent: ${signature}`);
+      } catch (error) {
+        console.error('❌ Transaction signing failed:', error);
+        console.error('Transaction details:', {
+          feePayer: transaction.feePayer?.toBase58(),
+          instructions: transaction.instructions.length,
+          signers: transaction.signatures.length,
+        });
+        throw error;
+      }
 
       // Wait for confirmation
       try {
