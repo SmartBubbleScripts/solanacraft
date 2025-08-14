@@ -62,56 +62,120 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
     setErrorMessage('');
 
     try {
-      console.log('🔍 Starting enhanced closeable account scan...');
+      console.log('🔍 Starting diagnostic scan...');
+      console.log('Wallet address:', publicKey.toString());
 
       const closedAccountsList: ClosedAccountInfo[] = [];
       let totalRent = 0;
 
-      // Method 1: Get all token accounts owned by the wallet
-      console.log('📡 Method 1: Getting all token accounts...');
+      // Step 1: Get ALL token accounts and log everything
+      console.log('📡 Step 1: Getting ALL token accounts...');
       const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
         publicKey,
         { programId: TOKEN_PROGRAM_ID }
       );
 
-      console.log(`Found ${tokenAccounts.value.length} token accounts`);
+      console.log(`Total token accounts found: ${tokenAccounts.value.length}`);
 
-      // Method 2: Check each account for closeability
-      console.log('📡 Method 2: Analyzing accounts for closeability...');
+      if (tokenAccounts.value.length === 0) {
+        console.log('❌ No token accounts found at all!');
+        setErrorMessage(
+          'No token accounts found in your wallet. This means you have no SPL tokens.'
+        );
+        return;
+      }
 
-      for (const { account, pubkey } of tokenAccounts.value) {
-        try {
-          const accountInfo = account.data.parsed.info;
-          const tokenAmount = accountInfo.tokenAmount.uiAmount;
-          const mint = accountInfo.mint;
+      // Step 2: Log every single account for debugging
+      console.log('📡 Step 2: Analyzing each account...');
+
+      for (let i = 0; i < tokenAccounts.value.length; i++) {
+        const { account, pubkey } = tokenAccounts.value[i];
+        const accountInfo = account.data.parsed.info;
+        const tokenAmount = accountInfo.tokenAmount.uiAmount;
+        const mint = accountInfo.mint;
+        const state = accountInfo.state;
+
+        console.log(`\n--- Account ${i + 1} ---`);
+        console.log(`Address: ${pubkey.toString()}`);
+        console.log(`Mint: ${mint}`);
+        console.log(`Token Amount: ${tokenAmount}`);
+        console.log(`State: ${state}`);
+        console.log(`Raw Amount: ${accountInfo.tokenAmount.amount}`);
+        console.log(`Decimals: ${accountInfo.tokenAmount.decimals}`);
+
+        // Check if this account can be closed
+        if (tokenAmount === 0) {
+          console.log(`💰 EMPTY ACCOUNT FOUND!`);
+
+          const standardTokenAccountSize = 165;
+          const rentExemption =
+            await connection.getMinimumBalanceForRentExemption(
+              standardTokenAccountSize
+            );
+          const rentAmount = rentExemption / LAMPORTS_PER_SOL;
 
           console.log(
-            `🔍 Checking account ${pubkey.toString()}: ${tokenAmount} tokens`
+            `Rent exemption: ${rentExemption} lamports (${rentAmount} SOL)`
           );
 
-          // Check if account can be closed (has rent to reclaim)
-          if (tokenAmount === 0) {
-            console.log(`💰 Found empty account: ${pubkey.toString()}`);
+          if (rentAmount > 0) {
+            const associatedTokenAddress = await getAssociatedTokenAddress(
+              new PublicKey(mint),
+              publicKey,
+              false,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID
+            );
 
-            const standardTokenAccountSize = 165;
-            const rentExemption =
-              await connection.getMinimumBalanceForRentExemption(
-                standardTokenAccountSize
-              );
-            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+            const isAssociated = associatedTokenAddress.equals(pubkey);
+            const tokenInfo = await getTokenInfo(mint);
 
-            if (rentAmount > 0) {
-              const associatedTokenAddress = await getAssociatedTokenAddress(
-                new PublicKey(mint),
-                publicKey,
-                false,
-                TOKEN_PROGRAM_ID,
-                ASSOCIATED_TOKEN_PROGRAM_ID
-              );
+            console.log(`Token Info: ${tokenInfo.symbol} - ${tokenInfo.name}`);
+            console.log(`Is Associated: ${isAssociated}`);
 
-              const isAssociated = associatedTokenAddress.equals(pubkey);
-              const tokenInfo = await getTokenInfo(mint);
+            closedAccountsList.push({
+              mint,
+              symbol: tokenInfo.symbol,
+              name: tokenInfo.name,
+              accountAddress: pubkey.toString(),
+              rentAmount,
+              isAssociated,
+              canClose: true,
+            });
 
+            totalRent += rentAmount;
+            console.log(
+              `✅ ADDED TO CLOSEABLE LIST: ${
+                tokenInfo.symbol
+              } - ${rentAmount.toFixed(4)} SOL rent`
+            );
+          }
+        } else if (tokenAmount > 0 && tokenAmount < 0.000001) {
+          console.log(`💰 DUST ACCOUNT FOUND! Amount: ${tokenAmount}`);
+
+          const standardTokenAccountSize = 165;
+          const rentExemption =
+            await connection.getMinimumBalanceForRentExemption(
+              standardTokenAccountSize
+            );
+          const rentAmount = rentExemption / LAMPORTS_PER_SOL;
+
+          if (rentAmount > 0) {
+            const associatedTokenAddress = await getAssociatedTokenAddress(
+              new PublicKey(mint),
+              publicKey,
+              false,
+              TOKEN_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID
+            );
+
+            const isAssociated = associatedTokenAddress.equals(pubkey);
+            const tokenInfo = await getTokenInfo(mint);
+
+            const existingAccount = closedAccountsList.find(
+              (acc) => acc.accountAddress === pubkey.toString()
+            );
+            if (!existingAccount) {
               closedAccountsList.push({
                 mint,
                 symbol: tokenInfo.symbol,
@@ -124,178 +188,28 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
               totalRent += rentAmount;
               console.log(
-                `✅ Added closeable account: ${
+                `✅ ADDED DUST ACCOUNT: ${
                   tokenInfo.symbol
                 } - ${rentAmount.toFixed(4)} SOL rent`
               );
             }
           }
-
-          // Check for dust accounts (very small amounts that are essentially worthless)
-          else if (tokenAmount > 0 && tokenAmount < 0.000001) {
-            console.log(
-              `💰 Found dust account: ${pubkey.toString()} with ${tokenAmount} tokens`
-            );
-
-            const standardTokenAccountSize = 165;
-            const rentExemption =
-              await connection.getMinimumBalanceForRentExemption(
-                standardTokenAccountSize
-              );
-            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
-
-            if (rentAmount > 0) {
-              const associatedTokenAddress = await getAssociatedTokenAddress(
-                new PublicKey(mint),
-                publicKey,
-                false,
-                TOKEN_PROGRAM_ID,
-                ASSOCIATED_TOKEN_PROGRAM_ID
-              );
-
-              const isAssociated = associatedTokenAddress.equals(pubkey);
-              const tokenInfo = await getTokenInfo(mint);
-
-              // Check if this account is not already in our list
-              const existingAccount = closedAccountsList.find(
-                (acc) => acc.accountAddress === pubkey.toString()
-              );
-              if (!existingAccount) {
-                closedAccountsList.push({
-                  mint,
-                  symbol: tokenInfo.symbol,
-                  name: tokenInfo.name,
-                  accountAddress: pubkey.toString(),
-                  rentAmount,
-                  isAssociated,
-                  canClose: true,
-                });
-
-                totalRent += rentAmount;
-                console.log(
-                  `✅ Added dust account: ${
-                    tokenInfo.symbol
-                  } - ${rentAmount.toFixed(4)} SOL rent`
-                );
-              }
-            }
-          }
-
-          // Check for frozen/deactivated accounts
-          else if (
-            accountInfo.state === 'frozen' ||
-            accountInfo.state === 'deactivated'
-          ) {
-            console.log(
-              `❄️ Found frozen/deactivated account: ${pubkey.toString()}`
-            );
-
-            const standardTokenAccountSize = 165;
-            const rentExemption =
-              await connection.getMinimumBalanceForRentExemption(
-                standardTokenAccountSize
-              );
-            const rentAmount = rentExemption / LAMPORTS_PER_SOL;
-
-            if (rentAmount > 0) {
-              const associatedTokenAddress = await getAssociatedTokenAddress(
-                new PublicKey(mint),
-                publicKey,
-                false,
-                TOKEN_PROGRAM_ID,
-                ASSOCIATED_TOKEN_PROGRAM_ID
-              );
-
-              const isAssociated = associatedTokenAddress.equals(pubkey);
-              const tokenInfo = await getTokenInfo(mint);
-
-              // Check if this account is not already in our list
-              const existingAccount = closedAccountsList.find(
-                (acc) => acc.accountAddress === pubkey.toString()
-              );
-              if (!existingAccount) {
-                closedAccountsList.push({
-                  mint,
-                  symbol: tokenInfo.symbol,
-                  name: tokenInfo.name,
-                  accountAddress: pubkey.toString(),
-                  rentAmount,
-                  isAssociated,
-                  canClose: true,
-                });
-
-                totalRent += rentAmount;
-                console.log(
-                  `✅ Added frozen account: ${
-                    tokenInfo.symbol
-                  } - ${rentAmount.toFixed(4)} SOL rent`
-                );
-              }
-            }
-          }
-        } catch (error) {
-          console.log(
-            `⚠️ Error processing account ${pubkey.toString()}:`,
-            error
-          );
+        } else {
+          console.log(`📊 Active account with balance: ${tokenAmount}`);
         }
       }
 
-      console.log(
-        `🎯 Scan complete! Found ${
-          closedAccountsList.length
-        } closeable accounts with ${totalRent.toFixed(4)} SOL total rent`
-      );
+      console.log(`\n🎯 FINAL RESULTS:`);
+      console.log(`Total accounts scanned: ${tokenAccounts.value.length}`);
+      console.log(`Closeable accounts found: ${closedAccountsList.length}`);
+      console.log(`Total rent available: ${totalRent.toFixed(4)} SOL`);
 
-      // If still no accounts found, try alternative scanning method
       if (closedAccountsList.length === 0) {
-        console.log(
-          '🔄 No closeable accounts found, trying alternative method...'
-        );
-
-        try {
-          // Try using getProgramAccounts to find more accounts
-          const allAccounts = await connection.getProgramAccounts(
-            TOKEN_PROGRAM_ID,
-            {
-              filters: [
-                {
-                  dataSize: 165, // Standard token account size
-                },
-                {
-                  memcmp: {
-                    offset: 32, // Owner offset in token account
-                    bytes: publicKey.toBase58(),
-                  },
-                },
-              ],
-            }
-          );
-
-          console.log(
-            `Alternative method found ${allAccounts.length} accounts`
-          );
-
-          for (const account of allAccounts) {
-            try {
-              const accountInfo = await connection.getAccountInfo(
-                account.pubkey
-              );
-
-              if (accountInfo && accountInfo.data.length > 0) {
-                // Parse the account data to check if it's closeable
-                // This is a more advanced method to find accounts
-                console.log(
-                  `🔍 Alternative: Found account ${account.pubkey.toString()}`
-                );
-              }
-            } catch (error) {
-              console.log(`⚠️ Error in alternative method:`, error);
-            }
-          }
-        } catch (alternativeError) {
-          console.error('❌ Alternative method failed:', alternativeError);
-        }
+        console.log('❌ NO CLOSEABLE ACCOUNTS FOUND');
+        console.log('This means:');
+        console.log('1. All your token accounts have balances > 0');
+        console.log('2. No accounts are empty or have dust amounts');
+        console.log('3. You might not have any token accounts to close');
       }
 
       setClosedAccounts(closedAccountsList);
@@ -303,13 +217,13 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
       if (closedAccountsList.length === 0) {
         setErrorMessage(
-          'No closeable token accounts found. This might mean: 1) All your token accounts have balances, 2) RPC endpoint issue, or 3) Network configuration problem. Check console for detailed logs.'
+          `No closeable accounts found. Scanned ${tokenAccounts.value.length} token accounts. All accounts have balances > 0. Check console for detailed analysis.`
         );
       }
     } catch (error) {
-      console.error('❌ Error during scanning:', error);
+      console.error('❌ Error during diagnostic scan:', error);
       setErrorMessage(
-        `Scanning failed: ${
+        `Scan failed: ${
           error instanceof Error ? error.message : 'Unknown error'
         }. Check console for details.`
       );
