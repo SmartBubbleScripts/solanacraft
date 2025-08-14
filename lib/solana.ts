@@ -168,10 +168,10 @@ export const NETWORKS = {
         'https://rpc.helius.xyz/?api-key=YOUR_API_KEY',
       // Fallback 1: QuickNode (free tier - 3M requests/month)
       process.env.NEXT_PUBLIC_QUICKNODE_RPC_URL ||
-        'https://your-endpoint.solana-mainnet.quiknode.pro/YOUR_API_KEY/',
+        'https://your-endpoint.solana-mainnet.quiknode.pro/YOUR_QUICKNODE_API_KEY/',
       // Fallback 2: Alchemy (free tier - 300M compute units/month)
       process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL ||
-        'https://solana-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
+        'https://solana-mainnet.g.alchemy.com/v2/pdo98slNo1UDfhpnC-r7J',
       // Last resort: Public RPC (not recommended for production)
       'https://api.mainnet-beta.solana.com',
     ],
@@ -196,7 +196,7 @@ export class ProductionConnectionManager {
           this.connections.push(new Connection(url, 'confirmed'));
         }
       });
-    } else {
+    } else if ('rpcUrl' in config) {
       // Single RPC for devnet/testnet
       this.connections.push(new Connection(config.rpcUrl, 'confirmed'));
     }
