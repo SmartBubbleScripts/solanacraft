@@ -295,7 +295,17 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
   };
 
   const handleClaimRent = async () => {
-    if (!publicKey || selectedAccounts.size === 0 || !connection) return;
+    if (!publicKey || selectedAccounts.size === 0 || !connection) {
+      setClaimError('Wallet not connected or no accounts selected');
+      return;
+    }
+
+    // Validate wallet connection
+    if (!publicKey.toBase58() || !PublicKey.isOnCurve(publicKey)) {
+      setClaimError('Invalid wallet public key');
+      return;
+    }
+
     setIsClaiming(true);
     setClaimError('');
     setClaimSuccess('');
@@ -362,6 +372,15 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       const commissionWallet =
         process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
       let totalCommission = 0;
+
+      // Validate commission wallet address
+      if (
+        commissionWallet &&
+        !PublicKey.isOnCurve(new PublicKey(commissionWallet))
+      ) {
+        throw new Error('Invalid commission wallet address');
+      }
+
       if (commissionWallet && validAccountsCount > 0) {
         totalCommission = validAccountsCount * 0.0007; // Base fee per account
 
@@ -420,10 +439,33 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
       console.log(`- Fee payer: ${transaction.feePayer?.toBase58()}`);
       console.log(`- Recent blockhash: ${transaction.recentBlockhash}`);
 
+      // Ensure transaction has required fields
+      if (!transaction.feePayer) {
+        throw new Error('Transaction fee payer not set');
+      }
+      if (!transaction.recentBlockhash) {
+        throw new Error('Transaction blockhash not set');
+      }
+      if (transaction.instructions.length === 0) {
+        throw new Error('Transaction has no instructions');
+      }
+
       // Send the single transaction with all close instructions
       let signature: string;
       try {
-        signature = await sendTransaction(transaction, connection);
+        // Ensure the transaction is properly prepared for the wallet
+        const latestBlockhash = await connection.getLatestBlockhash(
+          'finalized'
+        );
+        transaction.recentBlockhash = latestBlockhash.blockhash;
+        transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
+
+        // Use the wallet's sendTransaction method which handles signing properly
+        signature = await sendTransaction(transaction, connection, {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+          maxRetries: 3,
+        });
         console.log(`✅ Single transaction sent: ${signature}`);
       } catch (error) {
         console.error('❌ Transaction signing failed:', error);
