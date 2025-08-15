@@ -1,5 +1,16 @@
 'use client';
 
+/**
+ * TokenClaimer Component - Sol Incinerator-style implementation
+ *
+ * Key features:
+ * - Only closes empty token accounts owned by the connected wallet
+ * - Batches accounts into chunks of max 14 per transaction (Sol Incinerator limit)
+ * - Filters out accounts the user cannot sign for to prevent signature errors
+ * - Uses correct account owner as authority in close instructions
+ * - Processes each chunk as a separate transaction for reliability
+ */
+
 import { useState, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useConnection } from '@solana/wallet-adapter-react';
@@ -42,6 +53,7 @@ interface ClosedAccountInfo {
   rentAmount: number;
   isAssociated: boolean;
   canClose: boolean;
+  owner: PublicKey; // Add the actual owner of the account
 }
 
 export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
@@ -139,6 +151,28 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
               const isAssociated = associatedTokenAddress.equals(pubkey);
               const tokenInfo = await getTokenInfo(mint);
 
+              // Extract owner from account data first
+              let ownerPublicKey: PublicKey;
+              try {
+                const accountData = accountInfoRaw.data;
+                if (accountData.length >= 165) {
+                  const ownerOffset = 32; // Owner is at offset 32 in token account data
+                  const ownerBuffer = accountData.slice(
+                    ownerOffset,
+                    ownerOffset + 32
+                  );
+                  ownerPublicKey = new PublicKey(ownerBuffer);
+                } else {
+                  // Fallback to assuming user is owner if we can't parse
+                  ownerPublicKey = publicKey;
+                }
+              } catch (parseError) {
+                console.log(
+                  `⚠️ Could not parse owner for ${pubkey.toString()}, assuming user is owner`
+                );
+                ownerPublicKey = publicKey;
+              }
+
               // Now check if account is truly closeable AND user owns it
               let canClose = false;
               let closeReason = '';
@@ -153,13 +187,6 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
 
                     if (amount === BigInt(0)) {
                       // Check if user owns this account
-                      const ownerOffset = 32; // Owner is at offset 32 in token account data
-                      const ownerBuffer = accountData.slice(
-                        ownerOffset,
-                        ownerOffset + 32
-                      );
-                      const ownerPublicKey = new PublicKey(ownerBuffer);
-
                       if (ownerPublicKey.equals(publicKey)) {
                         canClose = true;
                         closeReason = 'Empty token account owned by user';
@@ -193,6 +220,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                 rentAmount,
                 isAssociated,
                 canClose,
+                owner: ownerPublicKey, // Store the actual owner
               };
 
               if (canClose) {
@@ -319,185 +347,153 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
         `🚀 Starting claim for ${selectedAccountInfos.length} accounts...`
       );
 
-      // Process accounts one by one for maximum reliability
+      // Sol Incinerator-style: Filter accounts to only those the user can actually sign for
+      // This prevents "Missing signature for public key" errors
+      const validAccounts = selectedAccountInfos.filter((acc) =>
+        acc.owner.equals(publicKey)
+      );
+
+      if (validAccounts.length === 0) {
+        throw new Error(
+          'No accounts found that you can sign for. Only close accounts you own.'
+        );
+      }
+
+      if (validAccounts.length !== selectedAccountInfos.length) {
+        console.log(
+          `⚠️ Filtered out ${
+            selectedAccountInfos.length - validAccounts.length
+          } accounts you cannot sign for`
+        );
+      }
+
+      console.log(`📦 Processing ${validAccounts.length} valid accounts...`);
+
+      // Sol Incinerator-style batching: max 14 accounts per transaction
+      const MAX_ACCOUNTS_PER_TX = 14;
+      const chunks = [];
+      for (let i = 0; i < validAccounts.length; i += MAX_ACCOUNTS_PER_TX) {
+        chunks.push(validAccounts.slice(i, i + MAX_ACCOUNTS_PER_TX));
+      }
+
       console.log(
-        `📦 Processing ${selectedAccountInfos.length} accounts individually...`
+        `📦 Split into ${chunks.length} transaction chunks (max ${MAX_ACCOUNTS_PER_TX} accounts per chunk)`
       );
 
       let totalClaimed = 0;
-
-      // Process all accounts in a single transaction for better UX
-      console.log(
-        `📦 Batching ${selectedAccountInfos.length} accounts into single transaction...`
-      );
-
-      const transaction = new Transaction();
       let validAccountsCount = 0;
+      let totalCommission = 0;
 
-      // Add close instructions for all accounts
-      for (
-        let accountIndex = 0;
-        accountIndex < selectedAccountInfos.length;
-        accountIndex++
-      ) {
-        const account = selectedAccountInfos[accountIndex];
+      // Process each chunk as a separate transaction
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex];
         console.log(
-          `📦 Processing account ${accountIndex + 1}/${
-            selectedAccountInfos.length
-          }: ${account.accountAddress}`
+          `📦 Processing chunk ${chunkIndex + 1}/${chunks.length} with ${
+            chunk.length
+          } accounts...`
         );
 
-        // Account ownership and emptiness already verified during scan
-        // Just add the close instruction
-        const closeInstruction = createCloseAccountInstruction(
-          new PublicKey(account.accountAddress),
-          publicKey, // Destination for rent (user gets full rent)
-          publicKey, // Authority (verified during scan)
-          []
+        const transaction = new Transaction();
+
+        // Add close instructions for this chunk
+        for (
+          let accountIndex = 0;
+          accountIndex < chunk.length;
+          accountIndex++
+        ) {
+          const account = chunk[accountIndex];
+          console.log(
+            `📦 Processing account ${accountIndex + 1}/${chunk.length}: ${
+              account.accountAddress
+            }`
+          );
+
+          // Use the correct owner as authority for the close instruction
+          const closeInstruction = createCloseAccountInstruction(
+            new PublicKey(account.accountAddress),
+            publicKey, // Destination for rent (user gets full rent)
+            account.owner, // Use the actual owner as authority
+            []
+          );
+          transaction.add(closeInstruction);
+
+          console.log(
+            `✅ Added close instruction for ${
+              account.accountAddress
+            } with owner ${account.owner.toBase58()}`
+          );
+
+          // User gets the full account rent
+          totalClaimed += account.rentAmount;
+          validAccountsCount++;
+        }
+
+        // Commission handling (optional - you can remove this for Sol Incinerator-style behavior)
+        const commissionWallet =
+          process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
+        let chunkCommission = 0;
+
+        if (commissionWallet && chunk.length > 0) {
+          chunkCommission = chunk.length * 0.0007; // Base fee per account
+          totalCommission += chunkCommission; // Add to total
+
+          // Add commission transfer instruction
+          const commissionTransferInstruction = SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(commissionWallet),
+            lamports: chunkCommission * LAMPORTS_PER_SOL,
+          });
+          transaction.add(commissionTransferInstruction);
+          console.log(
+            `💰 Added commission transfer: ${chunkCommission.toFixed(6)} SOL`
+          );
+        }
+
+        // Set transaction parameters
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = publicKey;
+
+        console.log(
+          `🎯 Sending chunk ${chunkIndex + 1} with ${
+            chunk.length
+          } close instructions...`
         );
-        transaction.add(closeInstruction);
 
-        console.log(`✅ Added close instruction for ${account.accountAddress}`);
+        // Send and confirm this chunk
+        try {
+          const signature = await sendTransaction(transaction, connection, {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed',
+            maxRetries: 3,
+          });
+          console.log(`✅ Chunk ${chunkIndex + 1} sent: ${signature}`);
 
-        // User gets the full account rent
-        totalClaimed += account.rentAmount;
-        validAccountsCount++;
+          // Wait for confirmation
+          const confirmation = await connection.confirmTransaction(
+            signature,
+            'confirmed'
+          );
+          if (confirmation.value.err) {
+            throw new Error(
+              `Chunk ${chunkIndex + 1} failed: ${JSON.stringify(
+                confirmation.value.err
+              )}`
+            );
+          }
+          console.log(`✅ Chunk ${chunkIndex + 1} confirmed successfully`);
+        } catch (error) {
+          console.error(`❌ Chunk ${chunkIndex + 1} failed:`, error);
+          throw new Error(
+            `Failed to process chunk ${chunkIndex + 1}: ${
+              error instanceof Error ? error.message : 'Unknown error'
+            }`
+          );
+        }
       }
 
       if (validAccountsCount === 0) {
         throw new Error('No valid accounts to close');
-      }
-
-      // Check if user has enough SOL to pay commission BEFORE processing
-      const commissionWallet =
-        process.env.NEXT_PUBLIC_COMMISSION_WALLET_ADDRESS;
-      let totalCommission = 0;
-
-      // Validate commission wallet address
-      if (
-        commissionWallet &&
-        !PublicKey.isOnCurve(new PublicKey(commissionWallet))
-      ) {
-        throw new Error('Invalid commission wallet address');
-      }
-
-      if (commissionWallet && validAccountsCount > 0) {
-        totalCommission = validAccountsCount * 0.0007; // Base fee per account
-
-        const userBalance = await connection.getBalance(publicKey);
-        const estimatedFees = transaction.instructions.length * 0.000005; // Estimated transaction fees
-        const totalCost = totalCommission + estimatedFees;
-
-        if (userBalance < totalCost * LAMPORTS_PER_SOL) {
-          throw new Error(
-            `Insufficient SOL. Need ${totalCost.toFixed(
-              6
-            )} SOL (commission: ${totalCommission.toFixed(
-              6
-            )} SOL + fees: ${estimatedFees.toFixed(6)} SOL), have ${(
-              userBalance / LAMPORTS_PER_SOL
-            ).toFixed(6)} SOL`
-          );
-        }
-
-        console.log(
-          `💰 Commission check passed: ${totalCommission.toFixed(6)} SOL`
-        );
-      }
-
-      // Commission handling - transfer commission to your wallet
-      if (commissionWallet && validAccountsCount > 0) {
-        console.log(
-          `💰 Commission calculated: ${totalCommission.toFixed(6)} SOL`
-        );
-
-        // Transfer commission to your wallet
-        const commissionTransferInstruction = SystemProgram.transfer({
-          fromPubkey: publicKey, // From user's wallet
-          toPubkey: new PublicKey(commissionWallet), // To your commission wallet
-          lamports: totalCommission * LAMPORTS_PER_SOL, // Convert to lamports
-        });
-
-        transaction.add(commissionTransferInstruction);
-        console.log(
-          `✅ Added commission transfer: ${totalCommission.toFixed(6)} SOL`
-        );
-      }
-
-      console.log(
-        `🎯 Sending single transaction with ${validAccountsCount} close instructions...`
-      );
-
-      // Get recent blockhash and set fee payer
-      const { blockhash } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
-
-      // Validate transaction before sending
-      console.log(`🔍 Transaction validation:`);
-      console.log(`- Instructions: ${transaction.instructions.length}`);
-      console.log(`- Fee payer: ${transaction.feePayer?.toBase58()}`);
-      console.log(`- Recent blockhash: ${transaction.recentBlockhash}`);
-
-      // Ensure transaction has required fields
-      if (!transaction.feePayer) {
-        throw new Error('Transaction fee payer not set');
-      }
-      if (!transaction.recentBlockhash) {
-        throw new Error('Transaction blockhash not set');
-      }
-      if (transaction.instructions.length === 0) {
-        throw new Error('Transaction has no instructions');
-      }
-
-      // Send the single transaction with all close instructions
-      let signature: string;
-      try {
-        // Ensure the transaction is properly prepared for the wallet
-        const latestBlockhash = await connection.getLatestBlockhash(
-          'finalized'
-        );
-        transaction.recentBlockhash = latestBlockhash.blockhash;
-        transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight;
-
-        // Use the wallet's sendTransaction method which handles signing properly
-        signature = await sendTransaction(transaction, connection, {
-          skipPreflight: false,
-          preflightCommitment: 'confirmed',
-          maxRetries: 3,
-        });
-        console.log(`✅ Single transaction sent: ${signature}`);
-      } catch (error) {
-        console.error('❌ Transaction signing failed:', error);
-        console.error('Transaction details:', {
-          feePayer: transaction.feePayer?.toBase58(),
-          instructions: transaction.instructions.length,
-          signers: transaction.signatures.length,
-        });
-        throw error;
-      }
-
-      // Wait for confirmation
-      try {
-        const confirmation = await connection.confirmTransaction(
-          signature,
-          'confirmed'
-        );
-        if (confirmation.value.err) {
-          console.error(
-            `❌ Transaction error details:`,
-            confirmation.value.err
-          );
-          throw new Error(
-            `Transaction failed: ${JSON.stringify(confirmation.value.err)}`
-          );
-        }
-        console.log(
-          `✅ All ${validAccountsCount} accounts closed successfully`
-        );
-      } catch (confirmError) {
-        console.error(`❌ Transaction confirmation failed:`, confirmError);
-        throw new Error(`Transaction failed to confirm: ${confirmError}`);
       }
 
       const userNetAmount = totalClaimed - totalCommission;
