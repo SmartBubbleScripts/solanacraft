@@ -139,7 +139,7 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
               const isAssociated = associatedTokenAddress.equals(pubkey);
               const tokenInfo = await getTokenInfo(mint);
 
-              // Now check if account is truly closeable
+              // Now check if account is truly closeable AND user owns it
               let canClose = false;
               let closeReason = '';
 
@@ -152,8 +152,20 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
                     const amount = amountBuffer.readBigUInt64LE(0);
 
                     if (amount === BigInt(0)) {
-                      canClose = true;
-                      closeReason = 'Empty token account';
+                      // Check if user owns this account
+                      const ownerOffset = 32; // Owner is at offset 32 in token account data
+                      const ownerBuffer = accountData.slice(
+                        ownerOffset,
+                        ownerOffset + 32
+                      );
+                      const ownerPublicKey = new PublicKey(ownerBuffer);
+
+                      if (ownerPublicKey.equals(publicKey)) {
+                        canClose = true;
+                        closeReason = 'Empty token account owned by user';
+                      } else {
+                        closeReason = `User doesn't own this account (owner: ${ownerPublicKey.toBase58()})`;
+                      }
                     } else {
                       closeReason = `Has ${amount} tokens (not empty)`;
                     }
@@ -325,79 +337,21 @@ export const TokenClaimer = ({ onClose }: TokenClaimerProps) => {
           }: ${account.accountAddress}`
         );
 
-        // Double-check that account is truly empty AND user has authority
-        const accountInfo = await connection.getAccountInfo(
-          new PublicKey(account.accountAddress)
+        // Account ownership and emptiness already verified during scan
+        // Just add the close instruction
+        const closeInstruction = createCloseAccountInstruction(
+          new PublicKey(account.accountAddress),
+          publicKey, // Destination for rent (user gets full rent)
+          publicKey, // Authority (verified during scan)
+          []
         );
-        if (accountInfo) {
-          // Check if this is a token account and get raw token amount
-          try {
-            const accountData = accountInfo.data;
-            if (accountData.length >= 165) {
-              // FIRST: Check if user is the owner of this token account
-              const ownerOffset = 32; // Owner is at offset 32 in token account data
-              const ownerBuffer = accountData.slice(
-                ownerOffset,
-                ownerOffset + 32
-              );
-              const ownerPublicKey = new PublicKey(ownerBuffer);
+        transaction.add(closeInstruction);
 
-              if (!ownerPublicKey.equals(publicKey)) {
-                console.log(
-                  `⚠️ SKIPPING ${
-                    account.accountAddress
-                  } - user doesn't own this account (owner: ${ownerPublicKey.toBase58()})`
-                );
-                continue; // Skip accounts you don't own
-              }
+        console.log(`✅ Added close instruction for ${account.accountAddress}`);
 
-              // THEN: Check if account is empty
-              const amountBuffer = accountData.slice(64, 72);
-              const amount = amountBuffer.readBigUInt64LE(0);
-
-              if (amount === BigInt(0)) {
-                // Account is truly empty AND user owns it, safe to close
-                const closeInstruction = createCloseAccountInstruction(
-                  new PublicKey(account.accountAddress),
-                  publicKey, // Destination for rent (user gets full rent)
-                  publicKey, // Authority (now verified to match owner)
-                  []
-                );
-                transaction.add(closeInstruction);
-
-                console.log(
-                  `✅ Added close instruction for ${account.accountAddress}`
-                );
-
-                // User gets the full account rent
-                totalClaimed += account.rentAmount;
-                validAccountsCount++;
-              } else {
-                console.log(
-                  `⚠️ SKIPPING ${account.accountAddress} - has ${amount} tokens (Error 6009 would occur)`
-                );
-                // Skip this account - don't try to close it
-                continue;
-              }
-            } else {
-              console.log(
-                `⚠️ SKIPPING ${account.accountAddress} - not a valid token account`
-              );
-              continue;
-            }
-          } catch (parseError) {
-            console.log(
-              `⚠️ SKIPPING ${account.accountAddress} - could not parse account data:`,
-              parseError
-            );
-            continue;
-          }
-        } else {
-          console.log(
-            `⚠️ SKIPPING ${account.accountAddress} - account not found`
-          );
-          continue;
-        }
+        // User gets the full account rent
+        totalClaimed += account.rentAmount;
+        validAccountsCount++;
       }
 
       if (validAccountsCount === 0) {
